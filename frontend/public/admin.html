@@ -4,6 +4,8 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Admin — Kuytitipibumami</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico"/>
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png"/>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap" rel="stylesheet"/>
   <style>
@@ -360,16 +362,74 @@
       cursor:pointer;box-shadow:0 4px 16px rgba(53,37,205,0.30);
     }
 
-    /* ── TOAST ── */
+    /* ── TOAST NOTIFICATION SYSTEM ── */
     .toast{
       position:fixed;top:20px;right:20px;
-      padding:12px 18px;border-radius:var(--radius-lg);
-      font-size:13px;font-weight:600;color:white;z-index:999;
-      box-shadow:0 8px 32px rgba(0,0,0,0.20);display:none;align-items:center;gap:7px;
+      padding:13px 18px 13px 16px;border-radius:12px;
+      font-size:13px;font-weight:600;color:white;z-index:9999;
+      display:none;align-items:center;gap:10px;min-width:260px;max-width:380px;
+      box-shadow:0 8px 32px rgba(0,0,0,0.22);
+      animation:slideIn .3s cubic-bezier(.34,1.56,.64,1);
     }
+    @keyframes slideIn{from{transform:translateX(120%);opacity:0}to{transform:translateX(0);opacity:1}}
+    @keyframes slideOut{from{transform:translateX(0);opacity:1}to{transform:translateX(120%);opacity:0}}
     .toast.show{display:flex}
+    .toast.hiding{animation:slideOut .25s ease forwards}
     .toast.success{background:linear-gradient(135deg,#059669,#0f6e56)}
     .toast.error{background:linear-gradient(135deg,#ba1a1a,#7f1d1d)}
+    .toast.warning{background:linear-gradient(135deg,#d97706,#92400e)}
+    .toast.info{background:linear-gradient(135deg,#3525cd,#7c3aed)}
+    .toast-icon{font-size:18px;flex-shrink:0}
+    .toast-body{flex:1}
+    .toast-title{font-size:12px;font-weight:800;margin-bottom:1px}
+    .toast-msg{font-size:11px;font-weight:500;opacity:.88}
+    .toast-close{background:none;border:none;color:rgba(255,255,255,.7);cursor:pointer;font-size:16px;padding:0 0 0 4px;line-height:1;flex-shrink:0}
+    .toast-close:hover{color:white}
+
+    /* ── CONFIRM DIALOG ── */
+    .confirm-ov{
+      position:fixed;inset:0;background:rgba(15,0,105,.55);
+      backdrop-filter:blur(8px);z-index:8888;
+      display:none;align-items:center;justify-content:center;padding:16px;
+    }
+    .confirm-ov.open{display:flex}
+    .confirm-box{
+      background:white;border-radius:20px;width:min(400px,100%);
+      padding:28px;box-shadow:0 24px 80px rgba(53,37,205,.30);
+      text-align:center;
+    }
+    .confirm-icon{font-size:3rem;margin-bottom:12px;line-height:1}
+    .confirm-title{font-size:16px;font-weight:800;color:var(--on-surface);margin-bottom:8px;letter-spacing:-.01em}
+    .confirm-msg{font-size:13px;color:var(--outline);font-weight:500;line-height:1.5;margin-bottom:24px}
+    .confirm-highlight{font-weight:700;color:var(--on-surface)}
+    .confirm-btns{display:flex;gap:10px;justify-content:center}
+    .btn-confirm-cancel{
+      padding:10px 24px;border-radius:10px;border:1.5px solid var(--outline-var);
+      background:white;font-family:'Poppins',sans-serif;font-size:13px;font-weight:600;
+      cursor:pointer;transition:all .15s;color:var(--on-surf-var);
+    }
+    .btn-confirm-cancel:hover{border-color:var(--outline);background:var(--surface-low)}
+    .btn-confirm-ok{
+      padding:10px 28px;border-radius:10px;border:none;
+      background:linear-gradient(135deg,#ba1a1a,#7f1d1d);
+      color:white;font-family:'Poppins',sans-serif;font-size:13px;font-weight:700;
+      cursor:pointer;box-shadow:0 4px 16px rgba(186,26,26,.30);transition:opacity .15s;
+    }
+    .btn-confirm-ok:hover{opacity:.88}
+    .btn-confirm-ok.safe{background:var(--grad-royal);box-shadow:0 4px 16px rgba(53,37,205,.30)}
+
+    /* ── EXPORT BUTTONS ── */
+    .export-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+    .btn-export{
+      display:flex;align-items:center;gap:6px;padding:8px 14px;
+      border-radius:var(--radius-lg);border:1.5px solid var(--outline-var);
+      background:white;font-family:'Poppins',sans-serif;font-size:11px;font-weight:700;
+      cursor:pointer;color:var(--on-surf-var);transition:all .15s;
+    }
+    .btn-export:hover{border-color:var(--primary-cnt);color:var(--primary);background:var(--surface-low)}
+    .btn-export svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2}
+    .btn-export.pdf:hover{border-color:#ba1a1a;color:#ba1a1a}
+    .btn-export.csv:hover{border-color:#059669;color:#059669}
 
     .tbl-empty{text-align:center;padding:40px;color:var(--outline);font-size:13px;font-weight:500}
 
@@ -389,7 +449,7 @@
 <div id="login-screen">
   <div class="login-card">
     <div class="login-logo">
-      <div class="login-logo-icon"><svg viewBox="0 0 24 24"><path d="M20 7H4a2 2 0 00-2 2v10a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2zM4 5h16a1 1 0 011 1v1H3V6a1 1 0 011-1z"/></svg></div>
+      <img src="/logo.png" alt="Kuytitipibumami Logo" style="width:48px;height:48px;border-radius:12px;object-fit:cover;box-shadow:0 4px 16px rgba(0,0,0,.25)"/>
       <div><div class="login-logo-text">Kuytitipibumami</div><div class="login-logo-sub">Admin Panel</div></div>
     </div>
     <h2>Selamat Datang</h2>
@@ -405,7 +465,7 @@
 <div id="app-screen">
   <div class="sidebar">
     <div class="sb-logo">
-      <div class="sb-logo-icon"><svg viewBox="0 0 24 24"><path d="M20 7H4a2 2 0 00-2 2v10a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2zM4 5h16a1 1 0 011 1v1H3V6a1 1 0 011-1z"/></svg></div>
+      <img src="/logo.png" alt="Logo" style="width:32px;height:32px;border-radius:8px;object-fit:cover;flex-shrink:0"/>
       <div><div class="sb-store" id="sb-store">Kuytitipibumami</div><div class="sb-country" id="sb-country">🌍</div></div>
     </div>
     <div class="sb-nav">
@@ -450,6 +510,14 @@
           <span class="tcard-title">Daftar Produk</span>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <input class="search-sm" type="text" placeholder="🔍 Cari produk..." oninput="filterTbl()"/>
+            <button class="btn-export csv" onclick="exportCSV()" title="Export ke CSV">
+              <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+              Export CSV
+            </button>
+            <button class="btn-export pdf" onclick="exportPDF()" title="Export ke PDF">
+              <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 15v-4h2a1 1 0 010 2H9M13 15v-4M16 11v4M13 13h2"/></svg>
+              Export PDF
+            </button>
             <button class="btn-add" onclick="openModal()">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               Tambah Produk
@@ -554,6 +622,19 @@
   </div>
 </div>
 
+<!-- CONFIRM DIALOG -->
+<div class="confirm-ov" id="confirm-ov">
+  <div class="confirm-box">
+    <div class="confirm-icon" id="confirm-icon">🗑️</div>
+    <div class="confirm-title" id="confirm-title">Hapus Produk?</div>
+    <div class="confirm-msg" id="confirm-msg">Aksi ini tidak bisa dibatalkan.</div>
+    <div class="confirm-btns">
+      <button class="btn-confirm-cancel" onclick="closeConfirm()">Batal</button>
+      <button class="btn-confirm-ok" id="confirm-ok-btn" onclick="executeConfirm()">Ya, Hapus</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL PRODUK -->
 <div class="modal-ov" id="modal-ov">
   <div class="modal">
@@ -596,7 +677,14 @@
   </div>
 </div>
 
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast">
+  <span class="toast-icon" id="toast-icon">✓</span>
+  <div class="toast-body">
+    <div class="toast-title" id="toast-title"></div>
+    <div class="toast-msg" id="toast-msg-text"></div>
+  </div>
+  <button class="toast-close" onclick="hideToast()">✕</button>
+</div>
 
 <script>
   const GRAD_CLS=['g-warm','g-cool','g-vivid','g-royal'];
@@ -714,26 +802,171 @@
     document.getElementById('f-img-ph').style.display='none';
   }
   function editProd(id){openModal(allProds.find(p=>p.id===id))}
+
+  /* ── CONFIRM DIALOG ── */
+  let _confirmCb = null;
+  function showConfirm({icon='🗑️',title='Yakin?',msg='',btnLabel='Ya, Lanjutkan',safe=false,cb}){
+    document.getElementById('confirm-icon').textContent=icon;
+    document.getElementById('confirm-title').textContent=title;
+    document.getElementById('confirm-msg').innerHTML=msg;
+    const btn=document.getElementById('confirm-ok-btn');
+    btn.textContent=btnLabel;
+    btn.className='btn-confirm-ok'+(safe?' safe':'');
+    _confirmCb=cb;
+    document.getElementById('confirm-ov').classList.add('open');
+  }
+  function closeConfirm(){document.getElementById('confirm-ov').classList.remove('open');_confirmCb=null}
+  function executeConfirm(){closeConfirm();if(_confirmCb)_confirmCb()}
+
   async function saveProduct(){
     const id=document.getElementById('f-id').value;
     const name=document.getElementById('f-name').value.trim();
     const ps=document.getElementById('f-sell').value, pc=document.getElementById('f-cost').value;
-    if(!name||!ps||!pc){showToast('Nama dan harga wajib diisi','error');return}
-    const fd=new FormData();
-    fd.append('name',name);fd.append('description',document.getElementById('f-desc').value);
-    fd.append('price_sell',ps);fd.append('price_cost',pc);
-    fd.append('category',document.getElementById('f-cat').value);fd.append('stock',document.getElementById('f-stock').value||0);
-    if(id)fd.append('active',document.getElementById('f-active').value);
-    const fi=document.getElementById('f-img').files[0];if(fi)fd.append('image',fi);
-    const r=await fetch(id?`/api/admin/products/${id}`:'/api/admin/products',{method:id?'PUT':'POST',headers:{Authorization:'Bearer '+token},body:fd});
-    const d=await r.json();
-    if(!r.ok){showToast(d.error||'Gagal','error');return}
-    closeModal();showToast(d.message,'success');loadProducts();
+    if(!name||!ps||!pc){showToast('Field Kosong','Nama produk dan harga wajib diisi','error');return}
+    const isEdit=!!id;
+    const doSave=async()=>{
+      const fd=new FormData();
+      fd.append('name',name);fd.append('description',document.getElementById('f-desc').value);
+      fd.append('price_sell',ps);fd.append('price_cost',pc);
+      fd.append('category',document.getElementById('f-cat').value);fd.append('stock',document.getElementById('f-stock').value||0);
+      if(id)fd.append('active',document.getElementById('f-active').value);
+      const fi=document.getElementById('f-img').files[0];if(fi)fd.append('image',fi);
+      const r=await fetch(id?`/api/admin/products/${id}`:'/api/admin/products',{method:id?'PUT':'POST',headers:{Authorization:'Bearer '+token},body:fd});
+      const d=await r.json();
+      if(!r.ok){showToast('Gagal Menyimpan',d.error||'Terjadi kesalahan','error');return}
+      closeModal();
+      showToast(isEdit?'Produk Diperbarui':'Produk Ditambahkan', isEdit?`"${name}" berhasil diupdate`:`"${name}" berhasil ditambahkan ke katalog`,'success');
+      loadProducts();
+    };
+    if(isEdit){
+      showConfirm({icon:'✏️',title:'Simpan Perubahan?',msg:`Perubahan pada produk <span class="confirm-highlight">"${name}"</span> akan disimpan.`,btnLabel:'Ya, Simpan',safe:true,cb:doSave});
+    } else {
+      doSave();
+    }
   }
+
   async function delProd(id,name){
-    if(!confirm(`Hapus "${name}"?`))return;
-    const r=await fetch(`/api/admin/products/${id}`,{method:'DELETE',headers:{Authorization:'Bearer '+token}});
-    const d=await r.json();showToast(d.message,'success');loadProducts();
+    showConfirm({
+      icon:'🗑️',
+      title:'Hapus Produk?',
+      msg:`Produk <span class="confirm-highlight">"${name}"</span> akan dihapus permanen dari database dan tidak bisa dikembalikan.`,
+      btnLabel:'Hapus Selamanya',
+      safe:false,
+      cb:async()=>{
+        const r=await fetch(`/api/admin/products/${id}`,{method:'DELETE',headers:{Authorization:'Bearer '+token}});
+        const d=await r.json();
+        showToast('Produk Dihapus',`"${name}" berhasil dihapus dari katalog`,'success');
+        loadProducts();
+      }
+    });
+  }
+
+  /* ── EXPORT FUNCTIONS ── */
+  function exportCSV(){
+    if(!allProds.length){showToast('Tidak Ada Data','Belum ada produk untuk diexport','warning');return}
+    const headers=['ID','Nama Produk','Deskripsi','Kategori','Harga Jual','Harga Modal','Profit','Stok','Status','Dibuat'];
+    const rows=allProds.map(p=>[
+      p.id,
+      `"${(p.name||'').replace(/"/g,'""')}"`,
+      `"${(p.description||'').replace(/"/g,'""')}"`,
+      `"${p.category||''}"`,
+      p.price_sell,
+      p.price_cost,
+      p.price_sell-p.price_cost,
+      p.stock||0,
+      p.active?'Aktif':'Nonaktif',
+      `"${p.created_at||''}"`
+    ]);
+    const csv=[headers.join(','),...rows.map(r=>r.join(','))].join('\n');
+    const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;
+    const now=new Date().toISOString().slice(0,10);
+    a.download=`kuytitipibumami-produk-${now}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('Export CSV Berhasil',`${allProds.length} produk diexport ke file CSV`,'success');
+  }
+
+  function exportPDF(){
+    if(!allProds.length){showToast('Tidak Ada Data','Belum ada produk untuk diexport','warning');return}
+    const fmt=n=>'Rp '+Number(n).toLocaleString('id-ID');
+    const now=new Date().toLocaleDateString('id-ID',{day:'2-digit',month:'long',year:'numeric'});
+    const rows=allProds.map((p,i)=>`
+      <tr style="background:${i%2===0?'#fff':'#f9f8ff'}">
+        <td style="padding:8px 10px;border-bottom:1px solid #e5e7eb;font-size:12px">${p.id}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #e5e7eb;font-size:12px;font-weight:600">${p.name}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #e5e7eb;font-size:12px">${p.category||'-'}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #e5e7eb;font-size:12px;font-weight:700;color:#ff6b35">${fmt(p.price_sell)}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #e5e7eb;font-size:12px;color:#777">${fmt(p.price_cost)}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #e5e7eb;font-size:12px;font-weight:700;color:#059669">+${fmt(p.price_sell-p.price_cost)}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #e5e7eb;font-size:12px;text-align:center">${p.stock||0}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #e5e7eb;font-size:12px">
+          <span style="padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;background:${p.active?'#d1fae5':'#fee2e2'};color:${p.active?'#065f46':'#991b1b'}">${p.active?'Aktif':'Nonaktif'}</span>
+        </td>
+      </tr>`).join('');
+    const totalProfit=allProds.reduce((a,p)=>a+(p.price_sell-p.price_cost),0);
+    const html=`<!DOCTYPE html><html><head><meta charset="UTF-8">
+    <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;padding:24px;color:#1b1b24}
+    @media print{body{padding:0}@page{margin:16mm}}</style></head>
+    <body>
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:20px;padding-bottom:16px;border-bottom:3px solid #3525cd">
+        <div style="width:48px;height:48px;background:linear-gradient(135deg,#3525cd,#7c3aed,#c026d3);border-radius:12px;display:flex;align-items:center;justify-content:center;color:white;font-size:22px">🛍️</div>
+        <div>
+          <div style="font-size:20px;font-weight:900;background:linear-gradient(135deg,#3525cd,#c026d3);-webkit-background-clip:text;-webkit-text-fill-color:transparent">Kuytitipibumami</div>
+          <div style="font-size:11px;color:#777;margin-top:2px">Laporan Data Produk · Dicetak ${now}</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">
+        <div style="background:linear-gradient(135deg,#ff6b35,#ffd700);border-radius:10px;padding:12px;color:white">
+          <div style="font-size:9px;font-weight:800;opacity:.8;text-transform:uppercase;letter-spacing:.05em">Total Produk</div>
+          <div style="font-size:24px;font-weight:900;margin-top:4px">${allProds.length}</div>
+        </div>
+        <div style="background:linear-gradient(135deg,#1a1a6e,#6366f1);border-radius:10px;padding:12px;color:white">
+          <div style="font-size:9px;font-weight:800;opacity:.8;text-transform:uppercase;letter-spacing:.05em">Produk Aktif</div>
+          <div style="font-size:24px;font-weight:900;margin-top:4px">${allProds.filter(p=>p.active).length}</div>
+        </div>
+        <div style="background:linear-gradient(135deg,#d00070,#ff6b35);border-radius:10px;padding:12px;color:white">
+          <div style="font-size:9px;font-weight:800;opacity:.8;text-transform:uppercase;letter-spacing:.05em">Total Stok</div>
+          <div style="font-size:24px;font-weight:900;margin-top:4px">${allProds.reduce((a,p)=>a+(p.stock||0),0)}</div>
+        </div>
+        <div style="background:linear-gradient(135deg,#3525cd,#c026d3);border-radius:10px;padding:12px;color:white">
+          <div style="font-size:9px;font-weight:800;opacity:.8;text-transform:uppercase;letter-spacing:.05em">Total Profit</div>
+          <div style="font-size:14px;font-weight:900;margin-top:4px">${fmt(totalProfit)}</div>
+        </div>
+      </div>
+      <table style="width:100%;border-collapse:collapse;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden">
+        <thead>
+          <tr style="background:linear-gradient(135deg,#3525cd,#7c3aed)">
+            <th style="padding:10px;text-align:left;font-size:10px;font-weight:800;color:white;text-transform:uppercase;letter-spacing:.04em">ID</th>
+            <th style="padding:10px;text-align:left;font-size:10px;font-weight:800;color:white;text-transform:uppercase;letter-spacing:.04em">Nama Produk</th>
+            <th style="padding:10px;text-align:left;font-size:10px;font-weight:800;color:white;text-transform:uppercase;letter-spacing:.04em">Kategori</th>
+            <th style="padding:10px;text-align:left;font-size:10px;font-weight:800;color:white;text-transform:uppercase;letter-spacing:.04em">Harga Jual</th>
+            <th style="padding:10px;text-align:left;font-size:10px;font-weight:800;color:white;text-transform:uppercase;letter-spacing:.04em">Modal</th>
+            <th style="padding:10px;text-align:left;font-size:10px;font-weight:800;color:white;text-transform:uppercase;letter-spacing:.04em">Profit</th>
+            <th style="padding:10px;text-align:center;font-size:10px;font-weight:800;color:white;text-transform:uppercase;letter-spacing:.04em">Stok</th>
+            <th style="padding:10px;text-align:left;font-size:10px;font-weight:800;color:white;text-transform:uppercase;letter-spacing:.04em">Status</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+        <tfoot>
+          <tr style="background:#f0ecf9">
+            <td colspan="5" style="padding:10px;font-size:12px;font-weight:800;text-align:right">TOTAL PROFIT KESELURUHAN:</td>
+            <td style="padding:10px;font-size:13px;font-weight:900;color:#059669">+${fmt(totalProfit)}</td>
+            <td colspan="2"></td>
+          </tr>
+        </tfoot>
+      </table>
+      <div style="margin-top:20px;font-size:10px;color:#999;text-align:center">
+        Dokumen ini digenerate otomatis oleh sistem Kuytitipibumami · ${now}
+      </div>
+    </body></html>`;
+    const win=window.open('','_blank');
+    win.document.write(html);
+    win.document.close();
+    win.onload=()=>{ win.print(); };
+    showToast('Export PDF Berhasil','Halaman print PDF sudah dibuka di tab baru','success');
   }
 
   /* ── SETTINGS ── */
@@ -795,10 +1028,15 @@
   }
   function addCat(){
     const inp=document.getElementById('cat-inp'),v=inp.value.trim();
-    if(!v)return;if(curCats.includes(v)){showToast('Sudah ada','error');return}
+    if(!v)return;if(curCats.includes(v)){showToast('Duplikat','Kategori ini sudah ada','error');return}
     curCats.push(v);renderCatTags();inp.value='';
+    showToast('Kategori Ditambahkan',`"${v}" berhasil ditambahkan`,'success');
   }
-  function removeCat(i){curCats.splice(i,1);renderCatTags()}
+  function removeCat(i){
+    const name=curCats[i];
+    curCats.splice(i,1);renderCatTags();
+    showToast('Kategori Dihapus',`"${name}" dihapus dari daftar`,'info');
+  }
   document.getElementById('cat-inp')?.addEventListener('keydown',e=>{if(e.key==='Enter')addCat()});
 
   function updatePreview(){
@@ -827,26 +1065,44 @@
     };
     const r=await fetch('/api/admin/settings',{method:'PUT',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(body)});
     const d=await r.json();
-    if(!r.ok){showToast(d.error||'Gagal','error');return}
+    if(!r.ok){showToast('Gagal Menyimpan',d.error||'Terjadi kesalahan','error');return}
     curSettings={};
     const pr=presets.find(c=>c.code===selCountry);
     document.getElementById('sb-store').textContent=body.store_name;
     document.getElementById('sb-country').textContent=(pr?.flag||'🌍')+' '+(pr?.name||'');
-    showToast('Pengaturan tersimpan!','success');
+    showToast('Pengaturan Tersimpan','Semua perubahan berhasil disimpan ke database','success');
   }
   async function changePw(){
     const o=document.getElementById('pw-old').value, n=document.getElementById('pw-new').value, c=document.getElementById('pw-conf').value;
-    if(n!==c){showToast('Konfirmasi tidak cocok','error');return}
-    if(n.length<6){showToast('Min 6 karakter','error');return}
-    const r=await fetch('/api/admin/password',{method:'PUT',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({current_password:o,new_password:n})});
-    const d=await r.json();showToast(d.message||d.error,r.ok?'success':'error');
-    if(r.ok){['pw-old','pw-new','pw-conf'].forEach(id=>document.getElementById(id).value='')}
+    if(n!==c){showToast('Password Tidak Cocok','Konfirmasi password baru tidak sesuai','error');return}
+    if(n.length<6){showToast('Password Terlalu Pendek','Minimal 6 karakter','error');return}
+    showConfirm({icon:'🔒',title:'Ganti Password?',msg:'Password lama akan diganti dan kamu perlu login ulang.',btnLabel:'Ya, Ganti Password',safe:true,cb:async()=>{
+      const r=await fetch('/api/admin/password',{method:'PUT',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({current_password:o,new_password:n})});
+      const d=await r.json();
+      if(r.ok){
+        showToast('Password Diubah','Password berhasil diperbarui','success');
+        ['pw-old','pw-new','pw-conf'].forEach(id=>document.getElementById(id).value='');
+      } else {
+        showToast('Gagal',''+d.error,'error');
+      }
+    }});
   }
 
-  function showToast(msg,type='success'){
+  let _toastTimer=null;
+  function hideToast(){
     const t=document.getElementById('toast');
-    t.textContent=msg;t.className=`toast show ${type}`;
-    setTimeout(()=>t.classList.remove('show'),3500);
+    t.classList.add('hiding');
+    setTimeout(()=>{t.classList.remove('show','hiding')},250);
+  }
+  function showToast(title,msg,type='success'){
+    if(_toastTimer)clearTimeout(_toastTimer);
+    const t=document.getElementById('toast');
+    const icons={success:'✓',error:'✕',warning:'⚠',info:'ℹ'};
+    document.getElementById('toast-icon').textContent=icons[type]||'✓';
+    document.getElementById('toast-title').textContent=title;
+    document.getElementById('toast-msg-text').textContent=msg||'';
+    t.className=`toast show ${type}`;
+    _toastTimer=setTimeout(hideToast,4000);
   }
 </script>
 </body>
