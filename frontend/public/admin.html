@@ -824,7 +824,7 @@ const SheetsAPI = {
 //    await SheetsAPI.remove('products', productId);
   const GRAD_CLS=['g-warm','g-cool','g-vivid','g-royal'];
   const COLORS=['#3525cd','#BC002D','#003478','#E30A17','#25D366','#DE2910','#FF6B35','#7C3AED','#000000','#128C7E','#059669','#D97706'];
-  let token=localStorage.getItem('jt'),adminUser=localStorage.getItem('ju');
+  let token=SheetsAPI.getItem('jt'),adminUser=SheetsAPI.getItem('ju');
   let allProds=[],presets=[],curSettings={},curCats=[],selCountry='JP';
 
   /* ── AUTH ── */
@@ -837,11 +837,11 @@ const SheetsAPI = {
       const d=await r.json();
       if(!r.ok){e.textContent=d.error;return}
       token=d.token;adminUser=d.username;
-      localStorage.setItem('jt',token);localStorage.setItem('ju',adminUser);
+      SheetsAPI.setItem('jt',token);SheetsAPI.setItem('ju',adminUser);
       showApp();
     }catch{e.textContent='Gagal konek ke server'}
   }
-  function logout(){localStorage.removeItem('jt');localStorage.removeItem('ju');token=null;location.reload()}
+  function logout(){SheetsAPI.removeItem('jt');SheetsAPI.removeItem('ju');token=null;location.reload()}
   document.getElementById('lp').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin()});
 
   async function showApp(){
