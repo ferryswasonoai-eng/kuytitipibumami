@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: kuytitipibumami
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: JWT_SECRET
+        sync: false
+      - key: ADMIN_USERNAME
+        sync: false
+      - key: ADMIN_PASSWORD_HASH
+        sync: false
+      - key: SHEETS_WEB_APP_URL
+        sync: false
+      - key: SHEETS_API_KEY
+        sync: false
