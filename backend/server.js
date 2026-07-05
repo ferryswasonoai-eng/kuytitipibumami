@@ -2,8 +2,6 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-const fs = require('fs');
-const { createClient } = require('@libsql/client');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
@@ -12,8 +10,59 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'kuytitipibumami_secret_2024';
 
-const db = createClient({ url: 'file:jastip.db' });
+// ================== KONFIGURASI GOOGLE SHEETS ==================
+const SHEETS_WEB_APP_URL = process.env.SHEETS_WEB_APP_URL; // wajib diisi di Render env vars
+const SHEETS_API_KEY = process.env.SHEETS_API_KEY; // wajib diisi di Render env vars
 
+if (!SHEETS_WEB_APP_URL || !SHEETS_API_KEY) {
+  console.error('❌ SHEETS_WEB_APP_URL dan SHEETS_API_KEY wajib diisi di environment variables');
+  process.exit(1);
+}
+
+// Admin login: username & hash password disimpan di ENV (bukan di Sheets, lebih aman & cepat)
+const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
+// Default password 'admin123' -- WAJIB diganti via env var ADMIN_PASSWORD_HASH di production
+const ADMIN_PASSWORD_HASH = process.env.ADMIN_PASSWORD_HASH || bcrypt.hashSync('admin123', 10);
+
+// ================== SHEETS API CLIENT (server-side, key tersembunyi) ==================
+async function sheetsGet(resource, params = {}) {
+  const qs = new URLSearchParams({ resource, apiKey: SHEETS_API_KEY, ...params }).toString();
+  const res = await fetch(`${SHEETS_WEB_APP_URL}?${qs}`);
+  const json = await res.json();
+  if (!json.success) throw new Error(json.error || 'Sheets API error');
+  return json.data;
+}
+
+async function sheetsPost(action, resource, extra = {}) {
+  const res = await fetch(SHEETS_WEB_APP_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ apiKey: SHEETS_API_KEY, action, resource, ...extra })
+  });
+  const json = await res.json();
+  if (!json.success) throw new Error(json.error || 'Sheets API error');
+  return json.data;
+}
+
+async function uploadImageToSheets(file) {
+  const base64Data = file.buffer.toString('base64');
+  const res = await fetch(SHEETS_WEB_APP_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({
+      apiKey: SHEETS_API_KEY,
+      action: 'uploadImage',
+      filename: `prod_${Date.now()}${path.extname(file.originalname)}`,
+      mimeType: file.mimetype,
+      base64Data: base64Data
+    })
+  });
+  const json = await res.json();
+  if (!json.success) throw new Error(json.error || 'Gagal upload gambar');
+  return json.data.url;
+}
+
+// ================== COUNTRY DEFAULTS (tetap statis, jarang berubah) ==================
 const COUNTRY_DEFAULTS = {
   JP: { name: 'Jepang', flag: '🇯🇵', currency: 'JPY', theme: '#BC002D', categories: ['Fashion','Elektronik','Anime & Manga','Makanan & Snack','Kosmetik','Aksesori','Mainan','Lainnya'] },
   KR: { name: 'Korea Selatan', flag: '🇰🇷', currency: 'KRW', theme: '#003478', categories: ['K-Beauty','Fashion','K-Food','Elektronik','K-Pop Merch','Skincare','Aksesori','Lainnya'] },
@@ -30,56 +79,15 @@ const COUNTRY_DEFAULTS = {
   OTHER: { name: 'Negara Lain', flag: '🌍', currency: 'IDR', theme: '#3525cd', categories: ['Fashion','Elektronik','Kosmetik','Makanan','Aksesori','Lainnya'] },
 };
 
-async function initDB() {
-  await db.execute(`CREATE TABLE IF NOT EXISTS admins (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, password TEXT NOT NULL)`);
-  await db.execute(`CREATE TABLE IF NOT EXISTS products (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, description TEXT, price_sell REAL NOT NULL, price_cost REAL NOT NULL, image TEXT, category TEXT DEFAULT 'Umum', stock INTEGER DEFAULT 0, active INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now','localtime')))`);
-  await db.execute(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)`);
-
-  const defaults = {
-    store_name: 'Kuytitipibumami', store_tagline: 'Belanja titip terpercaya langsung dari luar negeri',
-    country_code: 'JP', wa_number: '6281234567890',
-    wa_greeting: 'Halo Kak! Saya ingin memesan produk berikut:',
-    theme_primary: '#BC002D', show_stock: '1', currency_display: 'IDR', custom_categories: '',
-  };
-  for (const [key, value] of Object.entries(defaults)) {
-    await db.execute({ sql: "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", args: [key, value] });
-  }
-
-  const ex = await db.execute("SELECT id FROM admins WHERE username='admin'");
-  if (ex.rows.length === 0) {
-    const hash = bcrypt.hashSync('admin123', 10);
-    await db.execute({ sql: "INSERT INTO admins (username, password) VALUES (?, ?)", args: ['admin', hash] });
-    console.log('✅ Admin: admin / admin123');
-  }
-
-  const pc = await db.execute("SELECT COUNT(*) as cnt FROM products");
-  if (pc.rows[0].cnt === 0) {
-    const samples = [
-      ['Tas Kulit Tote Asakusa', 'Tas kulit asli dari distrik Asakusa Tokyo. Handmade, tahan lama', 890000, 520000, null, 'Fashion'],
-      ['Sneakers Nike Air Max JP', 'Edisi Jepang, colorway eksklusif, size 39-44', 1250000, 800000, null, 'Fashion'],
-      ['SK-II Facial Treatment Essence', 'Original Jepang, PITERA essence 230ml', 680000, 420000, null, 'Kosmetik'],
-      ['Ichiran Ramen Tonkotsu 5pcs', 'Original dari Hakata, isi 5 paket', 185000, 110000, null, 'Makanan & Snack'],
-      ['Casio G-Shock DW-5600', 'Original Jepang, water resistant 200m', 950000, 600000, null, 'Aksesori'],
-      ['Dragon Ball Z Manga Vol 1-10', 'Original bahasa Jepang dari Kinokuniya', 420000, 250000, null, 'Anime & Manga'],
-    ];
-    for (const [n, d, ps, pc2, img, cat] of samples) {
-      await db.execute({ sql: "INSERT INTO products (name,description,price_sell,price_cost,image,category) VALUES (?,?,?,?,?,?)", args: [n, d, ps, pc2, img, cat] });
-    }
-    console.log('✅ Sample products seeded');
-  }
-}
-
-const uploadsDir = path.join(__dirname, '../frontend/public/uploads');
-if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
-
-const storage = multer.diskStorage({
-  destination: (_, __, cb) => cb(null, uploadsDir),
-  filename: (_, file, cb) => cb(null, `prod_${Date.now()}${path.extname(file.originalname)}`)
+// Upload gambar disimpan sementara di memory, lalu dikirim ke Google Drive (bukan disk lokal)
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_, f, cb) => f.mimetype.startsWith('image/') ? cb(null, true) : cb(new Error('File harus gambar'))
 });
-const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 }, fileFilter: (_, f, cb) => f.mimetype.startsWith('image/') ? cb(null, true) : cb(new Error('File harus gambar')) });
 
-app.use(cors()); app.use(express.json());
-app.use('/uploads', express.static(uploadsDir));
+app.use(cors());
+app.use(express.json());
 app.use(express.static(path.join(__dirname, '../frontend/public')));
 
 function auth(req, res, next) {
@@ -89,17 +97,20 @@ function auth(req, res, next) {
   catch { res.status(401).json({ error: 'Token tidak valid' }); }
 }
 
-async function getSettings() {
-  const r = await db.execute("SELECT key, value FROM settings");
-  return Object.fromEntries(r.rows.map(row => [row.key, row.value]));
-}
-
-// Public
+// ================== PUBLIC ROUTES ==================
 app.get('/api/config', async (_, res) => {
-  const s = await getSettings();
-  const meta = COUNTRY_DEFAULTS[s.country_code] || COUNTRY_DEFAULTS['OTHER'];
-  const customCats = s.custom_categories ? s.custom_categories.split('|').filter(Boolean) : [];
-  res.json({ store_name: s.store_name, store_tagline: s.store_tagline, country_code: s.country_code, country_name: meta.name, country_flag: meta.flag, wa_number: s.wa_number, wa_greeting: s.wa_greeting, theme_primary: s.theme_primary, show_stock: s.show_stock === '1', categories: customCats.length ? customCats : meta.categories });
+  try {
+    const s = await sheetsGet('settings');
+    const meta = COUNTRY_DEFAULTS[s.country_code] || COUNTRY_DEFAULTS['OTHER'];
+    const customCats = s.custom_categories ? s.custom_categories.split('|').filter(Boolean) : [];
+    res.json({
+      store_name: s.store_name, store_tagline: s.store_tagline,
+      country_code: s.country_code, country_name: meta.name, country_flag: meta.flag,
+      wa_number: s.wa_number, wa_greeting: s.wa_greeting, theme_primary: s.theme_primary,
+      show_stock: s.show_stock === '1',
+      categories: customCats.length ? customCats : meta.categories
+    });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.get('/api/country-presets', (_, res) => {
@@ -107,72 +118,92 @@ app.get('/api/country-presets', (_, res) => {
 });
 
 app.get('/api/products', async (req, res) => {
-  const { search, category } = req.query;
-  let sql = "SELECT id,name,description,price_sell,image,category,stock FROM products WHERE active=1";
-  const args = [];
-  if (search) { sql += " AND (name LIKE ? OR description LIKE ?)"; args.push(`%${search}%`, `%${search}%`); }
-  if (category && category !== 'Semua') { sql += " AND category=?"; args.push(category); }
-  sql += " ORDER BY created_at DESC";
-  const result = await db.execute({ sql, args });
-  res.json(result.rows);
+  try {
+    const { search, category } = req.query;
+    const data = await sheetsGet('products', { activeOnly: '1', search: search || '', category: category || '' });
+    const shaped = data.map(p => ({ id: p.id, name: p.name, description: p.description, price_sell: Number(p.price_sell), image: p.image, category: p.category, stock: Number(p.stock) }));
+    res.json(shaped);
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.get('/api/categories', async (_, res) => {
-  const r = await db.execute("SELECT DISTINCT category FROM products WHERE active=1 ORDER BY category");
-  res.json(['Semua', ...r.rows.map(row => row.category)]);
+  try {
+    const data = await sheetsGet('products', { activeOnly: '1' });
+    const cats = [...new Set(data.map(p => p.category))].sort();
+    res.json(['Semua', ...cats]);
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/auth/login', async (req, res) => {
   const { username, password } = req.body;
-  const r = await db.execute({ sql: "SELECT * FROM admins WHERE username=?", args: [username] });
-  const admin = r.rows[0];
-  if (!admin || !bcrypt.compareSync(password, admin.password)) return res.status(401).json({ error: 'Username atau password salah' });
-  const token = jwt.sign({ id: admin.id, username: admin.username }, JWT_SECRET, { expiresIn: '8h' });
-  res.json({ token, username: admin.username });
+  if (username !== ADMIN_USERNAME || !bcrypt.compareSync(password, ADMIN_PASSWORD_HASH)) {
+    return res.status(401).json({ error: 'Username atau password salah' });
+  }
+  const token = jwt.sign({ username }, JWT_SECRET, { expiresIn: '8h' });
+  res.json({ token, username });
 });
 
-// Admin
-app.get('/api/admin/products', auth, async (_, res) => { const r = await db.execute("SELECT * FROM products ORDER BY created_at DESC"); res.json(r.rows); });
+// ================== ADMIN ROUTES ==================
+app.get('/api/admin/products', auth, async (_, res) => {
+  try {
+    const data = await sheetsGet('products');
+    res.json(data.map(p => ({ ...p, price_sell: Number(p.price_sell), price_cost: Number(p.price_cost), stock: Number(p.stock), active: Number(p.active) })));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
 
 app.post('/api/admin/products', auth, upload.single('image'), async (req, res) => {
-  const { name, description, price_sell, price_cost, category, stock } = req.body;
-  const image = req.file ? `/uploads/${req.file.filename}` : null;
-  const r = await db.execute({ sql: "INSERT INTO products (name,description,price_sell,price_cost,image,category,stock) VALUES (?,?,?,?,?,?,?)", args: [name, description, parseFloat(price_sell), parseFloat(price_cost), image, category || 'Umum', parseInt(stock) || 0] });
-  res.json({ id: Number(r.lastInsertRowid), message: 'Produk berhasil ditambahkan' });
+  try {
+    const { name, description, price_sell, price_cost, category, stock } = req.body;
+    const image = req.file ? await uploadImageToSheets(req.file) : null;
+    const result = await sheetsPost('create', 'products', {
+      data: { name, description, price_sell: parseFloat(price_sell), price_cost: parseFloat(price_cost), image, category: category || 'Umum', stock: parseInt(stock) || 0, active: 1 }
+    });
+    res.json({ id: result.id, message: 'Produk berhasil ditambahkan' });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.put('/api/admin/products/:id', auth, upload.single('image'), async (req, res) => {
-  const { id } = req.params;
-  const { name, description, price_sell, price_cost, category, stock, active } = req.body;
-  const ex = await db.execute({ sql: "SELECT image FROM products WHERE id=?", args: [id] });
-  const image = req.file ? `/uploads/${req.file.filename}` : ex.rows[0]?.image;
-  await db.execute({ sql: "UPDATE products SET name=?,description=?,price_sell=?,price_cost=?,image=?,category=?,stock=?,active=? WHERE id=?", args: [name, description, parseFloat(price_sell), parseFloat(price_cost), image, category, parseInt(stock) || 0, active !== undefined ? parseInt(active) : 1, id] });
-  res.json({ message: 'Produk berhasil diupdate' });
+  try {
+    const { id } = req.params;
+    const { name, description, price_sell, price_cost, category, stock, active } = req.body;
+    const updateData = { name, description, price_sell: parseFloat(price_sell), price_cost: parseFloat(price_cost), category, stock: parseInt(stock) || 0, active: active !== undefined ? parseInt(active) : 1 };
+    if (req.file) updateData.image = await uploadImageToSheets(req.file);
+    await sheetsPost('update', 'products', { id, data: updateData });
+    res.json({ message: 'Produk berhasil diupdate' });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.delete('/api/admin/products/:id', auth, async (req, res) => { await db.execute({ sql: "DELETE FROM products WHERE id=?", args: [req.params.id] }); res.json({ message: 'Produk berhasil dihapus' }); });
+app.delete('/api/admin/products/:id', auth, async (req, res) => {
+  try {
+    await sheetsPost('delete', 'products', { id: req.params.id });
+    res.json({ message: 'Produk berhasil dihapus' });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
 
-app.get('/api/admin/settings', auth, async (_, res) => { res.json(await getSettings()); });
+app.get('/api/admin/settings', auth, async (_, res) => {
+  try { res.json(await sheetsGet('settings')); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
 
 app.put('/api/admin/settings', auth, async (req, res) => {
-  const allowed = ['store_name', 'store_tagline', 'country_code', 'wa_number', 'wa_greeting', 'theme_primary', 'show_stock', 'currency_display', 'custom_categories'];
-  for (const key of allowed) {
-    if (req.body[key] !== undefined) await db.execute({ sql: "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", args: [key, String(req.body[key])] });
-  }
-  res.json({ message: 'Pengaturan berhasil disimpan' });
+  try {
+    const allowed = ['store_name', 'store_tagline', 'country_code', 'wa_number', 'wa_greeting', 'theme_primary', 'show_stock', 'currency_display', 'custom_categories'];
+    const data = {};
+    for (const key of allowed) if (req.body[key] !== undefined) data[key] = String(req.body[key]);
+    await sheetsPost('bulkUpdateSettings', 'settings', { data });
+    res.json({ message: 'Pengaturan berhasil disimpan' });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.put('/api/admin/password', auth, async (req, res) => {
-  const { current_password, new_password } = req.body;
-  const r = await db.execute({ sql: "SELECT * FROM admins WHERE id=?", args: [req.admin.id] });
-  if (!bcrypt.compareSync(current_password, r.rows[0].password)) return res.status(400).json({ error: 'Password lama salah' });
-  const hash = bcrypt.hashSync(new_password, 10);
-  await db.execute({ sql: "UPDATE admins SET password=? WHERE id=?", args: [hash, req.admin.id] });
-  res.json({ message: 'Password berhasil diubah' });
+// Catatan: password admin sekarang dikelola via env var ADMIN_PASSWORD_HASH di Render,
+// bukan lewat endpoint ini. Untuk ganti password: generate hash baru (lihat README),
+// lalu update env var ADMIN_PASSWORD_HASH di Render dashboard dan redeploy.
+app.put('/api/admin/password', auth, (_, res) => {
+  res.status(400).json({ error: 'Ganti password lewat environment variable ADMIN_PASSWORD_HASH di Render dashboard, bukan lewat sini.' });
 });
 
 app.get('/admin', (_, res) => res.sendFile(path.join(__dirname, '../frontend/public/admin.html')));
 app.get('/admin/*path', (_, res) => res.sendFile(path.join(__dirname, '../frontend/public/admin.html')));
 app.get('/*path', (_, res) => res.sendFile(path.join(__dirname, '../frontend/public/index.html')));
 
-initDB().then(() => app.listen(PORT, () => console.log(`🚀 Kuytitipibumami → http://localhost:${PORT}`))).catch(console.error);
+app.listen(PORT, () => console.log(`🚀 Kuytitipibumami (Sheets backend) → http://localhost:${PORT}`));
