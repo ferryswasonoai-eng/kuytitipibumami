@@ -83,5 +83,23 @@ const CATALOG_DATA = {
       { id:"gw_16", name:"Totebag Two Tone Mat Corduroy", desc:"Dua warna krem-hitam, logo bordir besar, kasual & bold.", price:"Rp 575.000" },
       { id:"gw_17", name:"Totebag Pocket Mat Kanvas", desc:"Warna hijau, saku depan pink kontras, eye-catching.", price:"Rp 475.000" }
     ]
+  },
+  erawadee: {
+    name: "ERAWADEE",
+    tagline: "Thailand Herbal & Wellness",
+    accent: "#1E7A4C",
+    accent2: "#7c39b7",
+    products: [
+      { id:"erawadee_01", name:"Erawadee Herbal Spray No.60", desc:"Mampu meredakan sakit dalam waktu 10-15 menit.", price:"Rp 495.000 (30ml) / Rp 700.000 (85ml)" },
+      { id:"erawadee_02", name:"Erawadee Crystal Deodorant", desc:"Mineral alami tawas, bunuh bakteri penyebab bau badan & kontrol keringat berlebih.", price:"Rp 115.000" },
+      { id:"erawadee_03", name:"Erawadee Black Spray Acne", desc:"Terbuat dari akar daun tapak budha, tanpa pewarna & pewangi, efektif sebagai obat semprot jerawat.", price:"Rp 395.000" },
+      { id:"erawadee_04", name:"Erawadee Syn Ake Cream", desc:"Cream wajah diformulasikan khusus untuk menghilangkan melasma (flek).", price:"Rp 1.250.000" },
+      { id:"erawadee_05", name:"Erawadee Roll On", desc:"10 macam minyak essential & ginseng, untuk sakit kepala, mual, pusing, mabuk laut, hidung mampet.", price:"Rp 90.000 (8ml)" },
+      { id:"erawadee_06", name:"Erawadee Gingo Biloba", desc:"Untuk pendarahan otak, meningkatkan daya ingat & mikro sirkulasi pembuluh otak.", price:"Rp 470.000 (100 cap)" },
+      { id:"erawadee_07", name:"Erawadee Kariyat", desc:"Mengobati pilek, mencegah infeksi, aktivitas anti virus & meningkatkan ketahanan tubuh.", price:"Rp 375.000 (100 cap)" },
+      { id:"erawadee_08", name:"Erawadee Garcinia", desc:"Menekan nafsu makan, menunda rasa lapar & memberikan rasa kenyang.", price:"Rp 480.000 (100 cap)" },
+      { id:"erawadee_09", name:"Erawadee Pla Lai Phueak", desc:"Mengembalikan kebugaran badan, mencegah ED, memperbaiki kualitas sperma.", price:"Rp 1.250.000 (100 cap)" },
+      { id:"erawadee_10", name:"Erawadee No.100 Tang Tang Hae Chao", desc:"Formula botani untuk dukungan harian energi, stamina & kepercayaan diri.", price:"Rp 850.000 (10 cap)" }
+    ]
   }
 };

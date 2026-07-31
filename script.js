@@ -7,33 +7,10 @@ const WA_NUMBER = '6281373186844'; // +62 813-7318-6844
 const PAGE_SIZE = 10;
 
 const STORE_THEME = {
-  tofu: {
-    accent: '#0EA5A5',
-    accent2: '#EC4899',
-    bg: '#FFFBF8',
-    card: '#ffffff',
-    ink: '#1c2a2a',
-    sub: '#6b7b7b',
-    tint: '#E8FBF7'
-  },
-  butterfly: {
-    accent: '#7C2D8E',
-    accent2: '#D4AF37',
-    bg: '#FBF6FC',
-    card: '#ffffff',
-    ink: '#241528',
-    sub: '#7a6b82',
-    tint: '#F5E9F7'
-  },
-  gw: {
-    accent: '#171717',
-    accent2: '#C9A876',
-    bg: '#FAFAF9',
-    card: '#ffffff',
-    ink: '#171717',
-    sub: '#78716c',
-    tint: '#F0EDE8'
-  }
+  tofu: { accent: '#0EA5A5', accent2: '#EC4899' },
+  butterfly: { accent: '#7c39b7', accent2: '#a92a6f' },
+  gw: { accent: '#1A1A1A', accent2: '#7c39b7' },
+  erawadee: { accent: '#1E7A4C', accent2: '#7c39b7' }
 };
 
 let currentStore = 'tofu';
@@ -47,13 +24,8 @@ function waLink(product){
 function applyTheme(storeKey){
   const t = STORE_THEME[storeKey];
   const root = document.documentElement.style;
-  root.setProperty('--brand-accent', t.accent);
-  root.setProperty('--brand-accent2', t.accent2);
-  root.setProperty('--brand-bg', t.bg);
-  root.setProperty('--brand-card', t.card);
-  root.setProperty('--brand-ink', t.ink);
-  root.setProperty('--brand-sub', t.sub);
-  document.body.style.background = t.bg;
+  root.setProperty('--cat-accent', t.accent);
+  root.setProperty('--cat-accent2', t.accent2);
 }
 
 function renderTabs(){
@@ -66,11 +38,10 @@ function renderTabs(){
     btn.className = 'store-tab';
     btn.setAttribute('data-active', key === currentStore ? 'true' : 'false');
     btn.style.setProperty('--tab-accent', theme.accent);
-    btn.style.setProperty('--tab-tint', theme.tint);
+    btn.style.setProperty('--tab-accent2', theme.accent2);
     btn.innerHTML = `
       <span class="tab-dot"></span>
       <span class="tab-brand">${store.name}</span>
-      <span class="tab-tagline">${store.tagline}</span>
     `;
     btn.addEventListener('click', () => {
       currentStore = key;

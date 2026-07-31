@@ -1,7 +1,12 @@
 # kuytitipibumami — Jastip Bangkok Catalogue
 
-Situs katalog statis (tanpa backend, tanpa database) untuk 3 brand jastip Bangkok:
-**TOFU** (skincare), **Butterfly** (parfum), **GentleWoman** (tas & aksesori).
+Situs katalog statis (tanpa backend, tanpa database) untuk 4 brand jastip Bangkok:
+**TOFU** (skincare), **Butterfly** (parfum), **GentleWoman** (tas & aksesori),
+**Erawadee** (herbal & wellness).
+
+Desain memakai sistem "Luminous Essence" (lihat `DESIGN.md`) — gaya
+Minimalist Glassmorphism: kartu produk semi-transparan dengan efek blur,
+font Manrope, aksen gradien ungu-pink, dan latar belakang blob lembut.
 
 Semua data produk ada di `data.js` — untuk update harga/produk, edit file itu langsung,
 tidak perlu database atau admin panel.
