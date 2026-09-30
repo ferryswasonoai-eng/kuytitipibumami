@@ -1,0 +1,8 @@
+{
+  "appId": "com.kuytitip.jastip",
+  "appName": "KuyTitip",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false
+  }
+}

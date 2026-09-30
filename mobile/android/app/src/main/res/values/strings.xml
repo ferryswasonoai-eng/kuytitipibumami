@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">KuyTitip</string>
+    <string name="title_activity_main">KuyTitip</string>
+    <string name="package_name">com.kuytitip.jastip</string>
+    <string name="custom_url_scheme">com.kuytitip.jastip</string>
+</resources>

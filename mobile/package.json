@@ -1,0 +1,22 @@
+{
+  "name": "kuytitip-mobile",
+  "version": "1.0.0",
+  "private": true,
+  "description": "KuyTitip — aplikasi jastip internal untuk Android (Capacitor)",
+  "scripts": {
+    "serve": "npx http-server www -p 8080 -c-1",
+    "sync": "npx cap sync android",
+    "icons": "npx capacitor-assets generate --android --iconBackgroundColor '#b83c6c' --splashBackgroundColor '#fbf5f3'"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/app": "^8.1.1",
+    "@capacitor/core": "^8.5.2",
+    "@capacitor/filesystem": "^8.1.3",
+    "@capacitor/share": "^8.0.2"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^8.5.2"
+  }
+}
