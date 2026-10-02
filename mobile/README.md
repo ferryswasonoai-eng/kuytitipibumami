@@ -1,5 +1,9 @@
 # KuyTitip — Aplikasi Jastip Android (internal)
 
+> **Versi 2:** data tersimpan online di Supabase dan bisa dipakai 3 admin sekaligus (login, peran,
+> realtime, tetap bisa offline). Web katalog + lacak pesanan untuk buyer ada di folder [`toko/`](../toko).
+> Langkah setup: [`supabase/PANDUAN-SETUP.md`](../supabase/PANDUAN-SETUP.md).
+
 Aplikasi pencatat jastip untuk dipakai sendiri/tim, **tanpa Play Store**. Dibuat dengan
 HTML/JS biasa (folder `www/`) lalu dibungkus menjadi APK Android memakai Capacitor.
 
@@ -14,7 +18,7 @@ HTML/JS biasa (folder `www/`) lalu dibungkus menjadi APK Android memakai Capacit
 | **Saya** | Nama usaha, trip aktif, template nota WA, backup/restore (.json), ekspor rekap (.csv) |
 
 Kurs diambil dari open.er-api.com (cadangan: Frankfurter/ECB), disimpan di HP sehingga
-tetap bisa dipakai saat offline. Semua data tersimpan **di HP** (IndexedDB) — rutin buat backup.
+tetap bisa dipakai saat offline. Data utama tersimpan di Supabase; HP menyimpan salinan untuk dipakai offline.
 
 ## Dapatkan APK
 
