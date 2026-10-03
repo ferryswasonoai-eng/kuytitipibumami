@@ -1,4 +1,4 @@
-/* KuyTitip v2 — aplikasi admin jastip (Supabase + cache offline di HP) */
+/* KuyTitip v4 — aplikasi admin jastip (Supabase + cache offline di HP) */
 (() => {
 'use strict';
 
@@ -108,13 +108,13 @@ function toast(msg, ms = 2400) {
 }
 
 /* ================= Local storage (IndexedDB = cache offline) ================= */
-const STORES = ['kv', 'customers', 'products', 'orders', 'payments', 'photos', 'admins'];
-const DATA_TABLES = ['products', 'customers', 'orders', 'payments'];
+const STORES = ['kv', 'customers', 'products', 'orders', 'payments', 'photos', 'admins', 'events'];
+const DATA_TABLES = ['events', 'products', 'customers', 'orders', 'payments'];
 let dbp;
 function db() {
   if (dbp) return dbp;
   dbp = new Promise((res, rej) => {
-    const r = indexedDB.open('kuytitip', 2);
+    const r = indexedDB.open('kuytitip', 3);
     r.onupgradeneeded = () => {
       const d = r.result;
       STORES.forEach((s) => { if (!d.objectStoreNames.contains(s)) d.createObjectStore(s, { keyPath: 'id' }); });
@@ -231,7 +231,41 @@ async function fetchRate(cur) {
   }
   throw new Error('Kurs gagal diambil — cek koneksi internet');
 }
-const lockedRate = (cur) => num(S.lockedRates && S.lockedRates[cur]);
+/* ================= Event jastip (Bangkok, Australia, Jepang, ...) ================= */
+let EVENTS = [];
+let CUR_EV = '';
+const EV_STATUS = [['draft', 'Draft (belum tampil)'], ['open', 'PO dibuka'], ['closed', 'PO ditutup'], ['done', 'Selesai (arsip)']];
+const evStatusLabel = (st) => (EV_STATUS.find((x) => x[0] === st) || EV_STATUS[0])[1];
+async function loadEvents() {
+  EVENTS = (await DB.all('events')).sort((a, b) => (a.status === 'open' ? 0 : 1) - (b.status === 'open' ? 0 : 1)
+    || ['open', 'closed', 'draft', 'done'].indexOf(a.status) - ['open', 'closed', 'draft', 'done'].indexOf(b.status)
+    || num(a.sort) - num(b.sort) || (a.name || '').localeCompare(b.name || ''));
+}
+const evById = (id) => EVENTS.find((e) => e.id === id);
+const activeEvents = () => EVENTS.filter((e) => e.status !== 'done');
+const curEv = () => evById(CUR_EV) || EVENTS.find((e) => e.status === 'open') || activeEvents()[0] || EVENTS[0] || null;
+async function setCurEv(id) { CUR_EV = id; await kvPut('curEvent', id); renderChrome(); }
+function evCfg(ev) {
+  ev = ev === undefined ? curEv() : ev;
+  if (!ev) return { currency: S.currency || 'THB', fee: { ...S.fee }, shipPerKg: num(S.shipPerKg), rounding: num(S.rounding) };
+  return { currency: ev.currency || 'THB', fee: { type: ev.feeType || 'percent', value: num(ev.feeValue) }, shipPerKg: num(ev.shipPerKg), rounding: num(ev.rounding) };
+}
+const evLabel = (ev) => ev ? `${ev.flag ? ev.flag + ' ' : ''}${ev.name}` : 'Tanpa event';
+const evChips = (sel, attr = 'data-evf', withAll = true) => `<div class="chips">${withAll ? `<button class="chip ${!sel ? 'on' : ''}" ${attr}="">Semua event</button>` : ''}${activeEvents().map((e) =>
+  `<button class="chip ${e.id === sel ? 'on' : ''}" ${attr}="${e.id}">${esc(evLabel(e))}</button>`).join('')}</div>`;
+const MONTHS_ID = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+function fmtRangeD(a, b) {
+  const d = (x) => { const t = new Date(x + 'T00:00:00'); return `${t.getDate()} ${MONTHS_ID[t.getMonth()]} ${t.getFullYear()}`; };
+  if (a && b) return `${d(a)} – ${d(b)}`;
+  return a ? `mulai ${d(a)}` : b ? `s/d ${d(b)}` : '';
+}
+function eventCode(ev) { return (ev && ev.code ? ev.code.toUpperCase() + '-' : '') + newCode(); }
+const lockedRate = (cur, ev) => {
+  ev = ev || curEv();
+  if (ev && ev.currency === cur && num(ev.lockedRate)) return num(ev.lockedRate);
+  const other = EVENTS.find((e) => e.currency === cur && num(e.lockedRate) && e.status === 'open');
+  return other ? num(other.lockedRate) : num(S.lockedRates && S.lockedRates[cur]);
+};
 const rateOf = (cur) => cur === 'IDR' ? 1 : (lockedRate(cur) || num(L.rates[cur] && L.rates[cur].rate));
 async function ensureRate(cur, maxAgeH = 6) {
   if (cur === 'IDR') return 1;
@@ -281,13 +315,19 @@ async function paidOf(orderId) {
 const MAP = {
   products: [['id', 'id'], ['name', 'name', 'str'], ['brand', 'brand', 'str'], ['description', 'description', 'str'],
     ['buyPrice', 'buy_price', 'num'], ['buyCur', 'buy_cur', 'cur'], ['sellPrice', 'sell_price', 'num'], ['weight', 'weight', 'num'],
-    ['photo', 'photo', 'nul'], ['note', 'note', 'str'], ['published', 'published', 'bool'], ['sort', 'sort', 'int'], ['createdAt', 'created_at', 'ts']],
+    ['photo', 'photo', 'nul'], ['note', 'note', 'str'], ['published', 'published', 'bool'], ['sort', 'sort', 'int'], ['createdAt', 'created_at', 'ts'],
+    ['category', 'category', 'str'], ['events', 'events', 'arr'], ['badge', 'badge', 'str'], ['featured', 'featured', 'boolf']],
   customers: [['id', 'id'], ['name', 'name', 'str'], ['phone', 'phone', 'str'], ['city', 'city', 'str'], ['address', 'address', 'str'],
     ['note', 'note', 'str'], ['createdAt', 'created_at', 'ts']],
   orders: [['id', 'id'], ['code', 'code', 'str'], ['customerId', 'customer_id', 'nul'], ['trip', 'trip', 'str'], ['status', 'status', 'str'],
     ['source', 'source', 'src'], ['items', 'items', 'json'], ['receipts', 'receipts', 'json'], ['shipping', 'shipping', 'num0'],
     ['discount', 'discount', 'num0'], ['subtotal', 'subtotal', 'num0'], ['total', 'total', 'num0'], ['note', 'note', 'str'],
-    ['pic', 'pic', 'nul'], ['picName', 'pic_name', 'nul'], ['createdAt', 'created_at', 'ts']],
+    ['pic', 'pic', 'nul'], ['picName', 'pic_name', 'nul'], ['createdAt', 'created_at', 'ts'], ['eventId', 'event_id', 'nul']],
+  events: [['id', 'id'], ['code', 'code', 'str'], ['name', 'name', 'str'], ['title', 'title', 'str'], ['country', 'country', 'str'],
+    ['flag', 'flag', 'str'], ['currency', 'currency', 'cur'], ['lockedRate', 'locked_rate', 'num'], ['feeType', 'fee_type', 'str'],
+    ['feeValue', 'fee_value', 'num0'], ['shipPerKg', 'ship_per_kg', 'num0'], ['rounding', 'rounding', 'num0'], ['poStart', 'po_start', 'date'],
+    ['poEnd', 'po_end', 'date'], ['eta', 'eta', 'str'], ['note', 'note', 'str'], ['tagline', 'tagline', 'str'], ['color', 'color', 'str'],
+    ['banner', 'banner', 'nul'], ['status', 'status', 'str'], ['sort', 'sort', 'int'], ['createdAt', 'created_at', 'ts']],
   payments: [['id', 'id'], ['orderId', 'order_id', 'str'], ['amount', 'amount', 'num0'], ['method', 'method', 'str'],
     ['note', 'note', 'str'], ['createdAt', 'created_at', 'ts']],
 };
@@ -301,6 +341,9 @@ function toRow(table, o) {
     else if (t === 'num0') v = num(v);
     else if (t === 'int') v = Math.round(num(v));
     else if (t === 'bool') v = v !== false;
+    else if (t === 'boolf') v = !!v;
+    else if (t === 'arr') v = Array.isArray(v) ? v : [];
+    else if (t === 'date') v = v ? String(v).slice(0, 10) : null;
     else if (t === 'json') v = Array.isArray(v) ? v : [];
     else if (t === 'ts') v = new Date(v || Date.now()).toISOString();
     else if (t === 'cur') v = v || 'THB';
@@ -316,8 +359,9 @@ function fromRow(table, r) {
     let v = r[k];
     if (t === 'ts') v = Date.parse(v) || Date.now();
     else if (t === 'num') v = v == null ? '' : v;
-    else if (t === 'json') v = Array.isArray(v) ? v : [];
-    else if (t === 'nul') v = v ?? '';
+    else if (t === 'json' || t === 'arr') v = Array.isArray(v) ? v : [];
+    else if (t === 'nul' || t === 'date') v = v ?? '';
+    else if (t === 'boolf') v = !!v;
     o[l] = v;
   }
   o.updatedAt = Date.parse(r.updated_at) || 0;
@@ -536,7 +580,8 @@ function finalizeOrder(o) {
 
 /* Rerender saat ada perubahan dari admin lain */
 let FORM_OPEN = false;
-function onDataChanged() {
+async function onDataChanged() {
+  await loadEvents();
   updateBadge();
   renderChrome();
   if (FORM_OPEN) { toast('Ada perubahan dari admin lain'); return; }
@@ -657,11 +702,13 @@ const trackLink = (o) => o.trackToken && webBase() ? `${webBase()}lacak.html?k=$
 function renderChrome() {
   $('#brandName').textContent = S.business || 'KuyTitip';
   const chip = $('#rateChip');
-  const cur = S.currency;
+  const ev = curEv();
+  const cur = evCfg(ev).currency;
   const r = rateOf(cur);
-  if (cur !== 'IDR' && r && ME) {
+  if (ME && ev) {
     chip.hidden = false;
-    chip.textContent = `${lockedRate(cur) ? '🔒 ' : ''}1 ${cur} = ${fmtIDR(r)}`;
+    chip.textContent = `${ev.flag || '✈️'} ${ev.code || ev.name}${cur !== 'IDR' && r ? ` · ${lockedRate(cur, ev) ? '🔒' : ''}${fmtIDR(r)}` : ''}`;
+    chip.title = cur !== 'IDR' && r ? `1 ${cur} = ${fmtIDR(r)} — ketuk untuk ganti event` : 'Ketuk untuk ganti event';
   } else chip.hidden = true;
 }
 function setTab(tab) { $$('.tabbar a').forEach((a) => a.classList.toggle('on', a.dataset.tab === tab)); }
@@ -766,6 +813,8 @@ async function afterAuth() {
   ME = me;
   if (!['owner', 'order', 'shopper'].includes(ME.role)) return viewPending();
   document.body.classList.remove('noauth');
+  CUR_EV = (await kvGet('curEvent')) || '';
+  await loadEvents();
   renderChrome();
   await migrateV1();
   Sync.updateStatus();
@@ -774,6 +823,7 @@ async function afterAuth() {
     view.innerHTML = `<div class="empty"><div class="big">⏳</div>Mengunduh data dari server…</div>`;
     await Sync.flush();
     try { await Sync.pull({ full: true }); } catch (e) { toast('Gagal mengambil data: ' + (e.message || e), 4000); }
+    await loadEvents(); renderChrome();
   } else {
     Sync.pull().then((c) => { if (c) onDataChanged(); }).catch(() => {});
   }
@@ -781,7 +831,7 @@ async function afterAuth() {
   updateBadge();
   if (!location.hash || location.hash === '#/') location.replace('#/beranda');
   await route();
-  ensureRate(S.currency).then(renderChrome).catch(() => {});
+  ensureRate(evCfg().currency).then(renderChrome).catch(() => {});
 }
 
 /* Data lama (versi 1, hanya di HP) → kirim ke server sekali saja */
@@ -867,43 +917,73 @@ function bindTip(box) {
 }
 
 /* ================= Views: Beranda + Kalkulator ================= */
+const DEFAULT_CATEGORIES = [['Skincare', '🧴'], ['Vitamin & Suplemen', '💊'], ['Herbal & Wellness', '🌿'], ['Parfum', '🌸'], ['Fashion', '👕'],
+  ['Tas & Aksesori', '👜'], ['Sepatu', '👟'], ['Makanan & Snack', '🍫'], ['Tumbler & Lifestyle', '🥤'], ['Anak & Bayi', '🧸']].map(([name, icon]) => ({ name, icon }));
+const categories = () => (Array.isArray(S.categories) && S.categories.length ? S.categories : DEFAULT_CATEGORIES);
+const catIcon = (n) => (categories().find((c) => c.name === n) || {}).icon || '🛍️';
+
+function pickEventSheet() {
+  if (!EVENTS.length) { if (isOwner()) location.hash = '#/event/baru'; else toast('Belum ada event jastip'); return; }
+  openSheet(`<h3>Pilih event aktif</h3><p class="muted small" style="margin-top:-6px">Kalkulator, pesanan baru & daftar belanja memakai pengaturan event ini.</p>
+    <div class="pick">${activeEvents().map((e) => `<button class="list-item" data-pick-ev="${e.id}">
+      <div class="ev-flag">${esc(e.flag || '✈️')}</div><div style="flex:1;min-width:0"><div class="title">${esc(e.name)} <span class="muted small">${esc(e.code)}</span></div>
+      <div class="sub">${esc(evStatusLabel(e.status))} · ${esc(e.currency)}${e.poStart || e.poEnd ? ' · ' + esc(fmtRangeD(e.poStart, e.poEnd)) : ''}</div></div>
+      ${e.id === curEv()?.id ? '<span class="badge pay-lunas">Aktif</span>' : ''}</button>`).join('')}</div>
+    <div class="btn-col">${isOwner() ? '<a class="btn" href="#/event" data-close>Kelola event</a>' : ''}<button class="btn ghost" data-close>Tutup</button></div>`, (sh) => {
+    $$('[data-close]', sh).forEach((b) => b.addEventListener('click', closeSheet));
+    $$('[data-pick-ev]', sh).forEach((b) => b.onclick = async () => { await setCurEv(b.dataset.pickEv); closeSheet(); toast('Event aktif: ' + evLabel(curEv())); route({ keepScroll: true }); });
+  });
+}
+
+function eventHero(ev, extra = '') {
+  if (!ev) return `<section class="ev-hero"><div class="ev-hero-in"><span class="ev-pill">EVENT</span><h1>Belum ada event</h1>
+    <p>${isOwner() ? 'Buat event jastip pertama (mis. Bangkok, Jepang).' : 'Minta owner membuat event jastip.'}</p>${isOwner() ? '<a class="btn primary sm" href="#/event/baru" style="width:auto;margin-top:10px">+ Buat event</a>' : ''}</div></section>`;
+  const bg = ev.banner ? `<div class="ev-hero-bg" style="background-image:url('${esc(photoUrl(ev.banner))}')"></div>` : `<div class="ev-hero-bg fb"></div><div class="ev-hero-flag">${esc(ev.flag || '✈️')}</div>`;
+  return `<section class="ev-hero" style="--ev:${esc(ev.color || '#ef3b2d')}">${bg}<div class="ev-hero-fade"></div>
+    <div class="ev-hero-in"><span class="ev-pill">${esc(ev.title || 'OPEN JASTIP')}</span>
+      <h1>${esc(ev.name)}</h1>
+      <div class="ev-dates">${esc(fmtRangeD(ev.poStart, ev.poEnd) || 'Jadwal belum diisi')}</div>
+      <div class="ev-meta"><span class="badge ${ev.status === 'open' ? 'pay-lunas' : ev.status === 'closed' ? 'st-dibeli' : 'st-batal'}">${esc(evStatusLabel(ev.status))}</span>
+        <span>${esc(ev.currency)} · fee ${ev.feeType === 'flat' ? fmtIDR(ev.feeValue) : num(ev.feeValue) + '%'}</span></div>
+      ${extra}</div></section>`;
+}
+
 async function viewHome() {
   setTab('beranda');
-  const [orders, pm] = await Promise.all([DB.all('orders'), paidMap()]);
-  const trips = [...new Set(orders.map((o) => o.trip).filter(Boolean))];
-  const tripSel = viewHome.trip ?? '';
-  const scope = orders.filter((o) => !['batal', 'menunggu'].includes(o.status) && (!tripSel || o.trip === tripSel));
+  const [allOrders, pm] = await Promise.all([DB.all('orders'), paidMap()]);
+  const evSel = viewHome.ev ?? (curEv()?.id || '');
+  const ev = evById(evSel);
+  const orders = allOrders.filter((o) => !evSel || o.eventId === evSel || (!o.eventId && ev && o.trip === ev.name));
+  const scope = orders.filter((o) => !['batal', 'menunggu'].includes(o.status));
   let omzet = 0, profit = 0, due = 0, aktif = 0;
   scope.forEach((o) => { const t = orderTotals(o, pm[o.id]); omzet += t.total; profit += t.profit; due += t.due; if (o.status !== 'selesai') aktif++; });
   const waiting = orders.filter((o) => o.status === 'menunggu').length;
   const toBuy = orders.filter((o) => ['baru', 'dibeli'].includes(o.status)).reduce((a, o) => a + (o.items || []).filter((i) => !i.bought).reduce((b, i) => b + num(i.qty), 0), 0);
-  const c = { cur: S.currency === 'IDR' ? 'THB' : S.currency, fee: { ...S.fee }, ship: S.shipPerKg, round: S.rounding };
-  const srcBy = {};
-  scope.forEach((o) => { srcBy[o.source || 'admin'] = (srcBy[o.source || 'admin'] || 0) + 1; });
-
-  // --- data dashboard ---
-  const liveScope = scope.filter((o) => o.status !== 'selesai');
   let qtyAll = 0, qtyBought = 0;
   scope.forEach((o) => (o.items || []).forEach((i) => { qtyAll += num(i.qty); if (i.bought || ['dikirim', 'selesai'].includes(o.status)) qtyBought += num(i.qty); }));
   const pct = qtyAll ? Math.round(qtyBought / qtyAll * 100) : 0;
   const paidAll = scope.reduce((a, o) => a + Math.min(num(pm[o.id]), orderTotals(o).total), 0);
   const payPct = omzet ? Math.round(paidAll / omzet * 100) : 0;
   const days = [...Array(7)].map((_, i) => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - 6 + i); return d; });
-  const perDay = days.map((d) => orders.filter((o) => o.status !== 'batal' && (!tripSel || o.trip === tripSel) && o.createdAt >= d.getTime() && o.createdAt < d.getTime() + 864e5).length);
-  const stCount = DONUT_STATUSES.map(([k]) => orders.filter((o) => o.status === k && (!tripSel || o.trip === tripSel)).length);
+  const perDay = days.map((d) => orders.filter((o) => o.status !== 'batal' && o.createdAt >= d.getTime() && o.createdAt < d.getTime() + 864e5).length);
+  const stCount = DONUT_STATUSES.map(([k]) => orders.filter((o) => o.status === k).length);
   const stTotal = stCount.reduce((a, b) => a + b, 0);
-  const recent = orders.filter((o) => !tripSel || o.trip === tripSel).sort((a, b) => b.createdAt - a.createdAt).slice(0, 4);
+  const recent = orders.slice().sort((a, b) => b.createdAt - a.createdAt).slice(0, 4);
   const cmap = Object.fromEntries((await DB.all('customers')).map((x) => [x.id, x]));
+  const cfgEv = ev || curEv();
+  const cfg = evCfg(cfgEv);
+  const c = { cur: cfg.currency === 'IDR' ? 'THB' : cfg.currency, fee: { ...cfg.fee }, ship: cfg.shipPerKg, round: cfg.rounding };
 
   view.innerHTML = `
     <p class="eyebrow">Dashboard</p>
     <h1 class="page-title">Halo, ${esc(ME.name || 'Admin')} 👋</h1>
-    <p class="page-sub">${esc(roleLabel(ME.role))}${S.trip ? ` · Trip aktif: <b>${esc(S.trip)}</b>` : ''} · PO ${S.poOpen ? 'dibuka' : 'ditutup'}</p>
+    <p class="page-sub">${esc(roleLabel(ME.role))} · ${activeEvents().filter((e) => e.status === 'open').length} event PO dibuka</p>
     ${waiting && !isShopper() ? `<a class="alert warn" href="#/pesanan?f=masuk">🔔 ${waiting} pesanan web menunggu konfirmasi →</a>` : ''}
-    ${trips.length ? `<div class="chips">${['', ...trips].map((t) => `<button class="chip ${t === tripSel ? 'on' : ''}" data-trip="${esc(t)}">${t ? esc(t) : 'Semua trip'}</button>`).join('')}</div>` : ''}
+    ${EVENTS.length ? evChips(evSel, 'data-evh') : ''}
+    ${ev ? eventHero(ev) : !EVENTS.length ? eventHero(null) : ''}
 
     <section class="hero-red">
-      <div class="lbl">Progres belanja${tripSel ? ' · ' + esc(tripSel) : ''}</div>
+      <div class="lbl">Progres belanja${ev ? ' · ' + esc(ev.name) : ' · semua event'}</div>
       <div class="big">${pct}<small>%</small></div>
       <div class="bar"><i style="width:${pct}%"></i></div>
       <div class="mini">
@@ -930,14 +1010,14 @@ async function viewHome() {
     <section class="card">
       <div class="card-head"><h2>Status pesanan</h2><a href="#/pesanan?f=semua">Lihat semua</a></div>
       ${stTotal ? `<div class="donut-row"><div id="donut">${donutSVG(stCount)}</div>
-        <div class="legend">${DONUT_STATUSES.map(([k, l, c], i) => `<div><i style="background:${c}"></i><span>${l}</span><b>${stCount[i]}</b><span class="small" style="flex:0 0 38px;text-align:right">${Math.round(stCount[i] / stTotal * 100)}%</span></div>`).join('')}</div></div>`
+        <div class="legend">${DONUT_STATUSES.map(([k, l, col], i) => `<div><i style="background:${col}"></i><span>${l}</span><b>${stCount[i]}</b><span class="small" style="flex:0 0 38px;text-align:right">${Math.round(stCount[i] / stTotal * 100)}%</span></div>`).join('')}</div></div>`
       : '<p class="muted">Belum ada pesanan.</p>'}
     </section>
 
     ${recent.length ? `<section class="card recent">
       <div class="card-head"><h2>Pesanan terbaru</h2><a href="#/pesanan">Lihat semua</a></div>
-      ${recent.map((o) => { const cu = cmap[o.customerId]; return `<a class="list-item" href="#/pesanan/${o.id}">
-        <div class="avatar">${esc((cu?.name || '?').slice(0, 1).toUpperCase())}</div>
+      ${recent.map((o) => { const cu = cmap[o.customerId]; const oe = evById(o.eventId); return `<a class="list-item" href="#/pesanan/${o.id}">
+        <div class="avatar">${esc(oe?.flag || (cu?.name || '?').slice(0, 1).toUpperCase())}</div>
         <div style="flex:1;min-width:0"><div class="title">${esc(cu?.name || 'Tanpa customer')}</div>
           <div class="sub">#${esc(o.code)} · ${statusLabel(o.status)} · ${fmtAgo(o.createdAt)}</div></div>
         ${o.status === 'menunggu' ? '<span class="dot-new" title="Baru masuk"></span>' : ''}
@@ -946,7 +1026,7 @@ async function viewHome() {
 
     <p class="eyebrow">Alat bantu</p>
     <h1 class="page-title">Kalkulator jastip</h1>
-    <p class="page-sub">Hitung kurs dan fee jastip per item.${isOwner() ? ' Simpan sebagai markup bawaan untuk semua admin.' : ' Markup bawaan diatur owner.'}</p>
+    <p class="page-sub">${cfgEv ? `Memakai pengaturan event <b>${esc(evLabel(cfgEv))}</b>.` : 'Hitung kurs dan fee jastip per item.'}${isOwner() && cfgEv ? ' Simpan untuk mengubah markup bawaan event ini.' : ''}</p>
 
     <section class="card">
       <h2>Kurs</h2>
@@ -979,10 +1059,10 @@ async function viewHome() {
         <div class="field"><label>Berat (gram)</label><input class="input" id="cWeight" data-money inputmode="decimal" placeholder="0"></div>
       </div>
       <div class="result" id="cResult"></div>
-      ${isOwner() ? `<div class="toggle-row" style="margin-top:12px;padding-bottom:4px"><span>Kunci kurs ini untuk semua admin</span>
-        <label class="switch"><input type="checkbox" id="cLock" ${lockedRate(c.cur) ? 'checked' : ''}><span></span></label></div>` : ''}
+      ${isOwner() && cfgEv ? `<div class="toggle-row" style="margin-top:12px;padding-bottom:4px"><span>Kunci kurs untuk event ${esc(cfgEv.name)}</span>
+        <label class="switch"><input type="checkbox" id="cLock" ${num(cfgEv.lockedRate) ? 'checked' : ''}><span></span></label></div>` : ''}
       <div class="btn-col" style="margin-top:14px">
-        ${isOwner() ? '<button class="btn primary" id="cSave" type="button">Simpan sebagai markup bawaan</button>' : ''}
+        ${isOwner() && cfgEv ? `<button class="btn primary" id="cSave" type="button">Simpan sebagai markup bawaan ${esc(cfgEv.name)}</button>` : ''}
         <button class="btn" id="cCopy" type="button">Bagikan harga ini</button>
       </div>
     </section>`;
@@ -995,7 +1075,8 @@ async function viewHome() {
   };
   const info = () => {
     const r = L.rates[c.cur];
-    el('cRateInfo').textContent = lockedRate(c.cur) ? `🔒 Dikunci owner: ${fmtIDR(lockedRate(c.cur))}${r ? ` · kurs pasar ${fmtRate(r.rate)} (${fmtAgo(r.at)})` : ''}`
+    const lk = lockedRate(c.cur, cfgEv);
+    el('cRateInfo').textContent = lk ? `🔒 Dikunci owner: ${fmtIDR(lk)}${r ? ` · kurs pasar ${fmtRate(r.rate)} (${fmtAgo(r.at)})` : ''}`
       : r ? `Sumber: ${r.src} · diperbarui ${fmtAgo(r.at)}` : 'Belum ada kurs — tekan Perbarui (butuh internet) atau isi manual.';
     el('cBuyLbl').textContent = `Harga beli (${c.cur})`;
   };
@@ -1014,30 +1095,27 @@ async function viewHome() {
     el('cRateInfo').textContent = 'Mengambil kurs…';
     try {
       if (force) await fetchRate(c.cur); else await ensureRate(c.cur);
-      const v = force && !lockedRate(c.cur) ? L.rates[c.cur]?.rate : rateOf(c.cur);
+      const v = force && !lockedRate(c.cur, cfgEv) ? L.rates[c.cur]?.rate : rateOf(c.cur);
       if (v) el('cRate').value = v; else toast('Kurs belum tersedia — isi manual');
     } catch (e) { toast(e.message); }
     info(); recalc();
   };
-
   setFeeType(c.fee.type); info(); recalc();
   $$('#cFeeType button').forEach((b) => b.onclick = () => { setFeeType(b.dataset.v); recalc(); });
   ['cFee', 'cShip', 'cBuy', 'cWeight', 'cRate'].forEach((id) => el(id).oninput = recalc);
   el('cRound').onchange = recalc;
   el('cRate').onchange = async () => {
     const v = num(el('cRate').value);
-    if (v > 0 && !lockedRate(c.cur)) { L.rates[c.cur] = { rate: v, at: Date.now(), src: 'manual' }; await saveLocal(); info(); renderChrome(); }
+    if (v > 0 && !lockedRate(c.cur, cfgEv)) { L.rates[c.cur] = { rate: v, at: Date.now(), src: 'manual' }; await saveLocal(); info(); renderChrome(); }
   };
-  el('cCur').onchange = () => { c.cur = el('cCur').value; el('cRate').value = rateOf(c.cur) || ''; const lk = el('cLock'); if (lk) lk.checked = !!lockedRate(c.cur); info(); recalc(); refresh(false); };
+  el('cCur').onchange = () => { c.cur = el('cCur').value; el('cRate').value = rateOf(c.cur) || ''; info(); recalc(); refresh(false); };
   el('cRefresh').onclick = () => refresh(true);
   if (el('cSave')) el('cSave').onclick = async () => {
+    const e = { ...cfgEv };
     const v = num(el('cRate').value);
-    const locked = { ...S.lockedRates };
-    if (el('cLock').checked && v > 0) locked[c.cur] = v; else delete locked[c.cur];
-    Object.assign(S, { currency: c.cur, fee: { ...c.fee }, shipPerKg: c.ship, rounding: c.round, lockedRates: locked });
-    await saveShared();
-    info();
-    toast('Markup bawaan disimpan untuk semua admin ✓');
+    Object.assign(e, { currency: c.cur, feeType: c.fee.type, feeValue: c.fee.value, shipPerKg: c.ship, rounding: c.round, lockedRate: el('cLock').checked && v > 0 ? v : '' });
+    await saveRow('events', e); await loadEvents(); renderChrome(); info();
+    toast(`Markup bawaan ${e.name} disimpan ✓`);
   };
   el('cCopy').onclick = () => {
     const r = c.last;
@@ -1045,8 +1123,118 @@ async function viewHome() {
     shareText('Harga jastip', `Harga ${c.cur} ${el('cBuy').value} → harga jastip ${fmtIDR(r.sell)} (kurs ${fmtRate(num(el('cRate').value))})`);
   };
   bindTip($('#trend'));
-  $$('[data-trip]').forEach((b) => b.onclick = () => { viewHome.trip = b.dataset.trip; viewHome(); });
-  if (!rateOf(c.cur) || (!lockedRate(c.cur) && L.rates[c.cur] && Date.now() - L.rates[c.cur].at > 6 * 3600e3)) refresh(false);
+  $$('[data-evh]').forEach((b) => b.onclick = async () => { viewHome.ev = b.dataset.evh; if (b.dataset.evh) await setCurEv(b.dataset.evh); viewHome(); });
+  if (!rateOf(c.cur) || (!lockedRate(c.cur, cfgEv) && L.rates[c.cur] && Date.now() - L.rates[c.cur].at > 6 * 3600e3)) refresh(false);
+}
+
+/* ================= Views: Event jastip ================= */
+async function viewEvents() {
+  setTab('saya');
+  const [orders] = await Promise.all([DB.all('orders')]);
+  view.innerHTML = `
+    <button class="back" onclick="location.hash='#/saya'">‹ Saya</button>
+    <p class="eyebrow">Event jastip</p>
+    <h1 class="page-title">Event</h1>
+    <p class="page-sub">Setiap event punya mata uang, kurs, fee, ongkir & periode PO sendiri. Event berstatus <b>PO dibuka</b> atau <b>ditutup</b> tampil di web buyer.</p>
+    ${EVENTS.length ? EVENTS.map((e) => { const n = orders.filter((o) => o.eventId === e.id && o.status !== 'batal').length; return `
+      <a class="ev-card" href="#/event/${e.id}" style="--ev:${esc(e.color || '#ef3b2d')}">
+        ${e.banner ? `<img data-pid="${esc(e.banner)}" alt="">` : `<span class="ev-card-flag">${esc(e.flag || '✈️')}</span>`}
+        <div class="ev-card-in"><small>${esc(e.title || 'OPEN JASTIP')} · ${esc(e.code)}</small><b>${esc(e.name)}</b>
+          <span>${esc(fmtRangeD(e.poStart, e.poEnd) || 'Jadwal belum diisi')}</span>
+          <span class="badge ${e.status === 'open' ? 'pay-lunas' : e.status === 'closed' ? 'st-dibeli' : 'st-batal'}">${esc(evStatusLabel(e.status))}</span> <span class="small">${n} pesanan · ${esc(e.currency)}</span></div></a>`; }).join('')
+    : '<div class="empty"><div class="big">✈️</div>Belum ada event.</div>'}
+    ${isOwner() ? `<button class="fab" aria-label="Event baru" onclick="location.hash='#/event/baru'">+</button>` : ''}`;
+  await hydratePhotos();
+}
+
+async function viewEventForm(id) {
+  setTab('saya');
+  if (!isOwner()) { toast('Hanya owner yang bisa mengubah event'); location.replace('#/event'); return; }
+  let e = id ? evById(id) : null;
+  if (id && !e) { location.replace('#/event'); return; }
+  e = e ? { ...e } : { id: 'ev_' + uid(), code: '', name: '', title: 'OPEN JASTIP', country: '', flag: '', currency: 'THB', lockedRate: '', feeType: 'percent', feeValue: 10,
+    shipPerKg: 0, rounding: 1000, poStart: '', poEnd: '', eta: '', note: '', tagline: 'Produk original langsung dari tokonya', color: '#ef3b2d', banner: '', status: 'draft', sort: EVENTS.length + 1, createdAt: Date.now() };
+  const COLORS = ['#ef3b2d', '#1d3a8a', '#c8102e', '#0f766e', '#7c3aed', '#d97706', '#be185d', '#111827'];
+  const FLAGS = ['🇹🇭', '🇯🇵', '🇰🇷', '🇦🇺', '🇸🇬', '🇲🇾', '🇨🇳', '🇭🇰', '🇹🇼', '🇻🇳', '🇺🇸', '🇬🇧', '🇫🇷', '🇹🇷', '🇸🇦', '🇮🇩'];
+  view.innerHTML = `
+    <button class="back" onclick="location.hash='#/event'">‹ Event</button>
+    <p class="eyebrow">${id ? 'Ubah event' : 'Event baru'}</p>
+    <h1 class="page-title">${esc(e.name || 'Event jastip baru')}</h1>
+    <div id="evPreview"></div>
+    <section class="card">
+      <h2>Identitas event</h2>
+      <div class="two">
+        <div class="field"><label class="req">Nama kota</label><input class="input" id="eName" value="${esc(e.name)}" placeholder="mis. Bangkok"></div>
+        <div class="field"><label class="req">Kode singkat</label><input class="input" id="eCode" value="${esc(e.code)}" maxlength="5" placeholder="mis. BKK" style="text-transform:uppercase"></div>
+      </div>
+      <div class="two">
+        <div class="field"><label>Label</label><select class="input" id="eTitle">${['OPEN JASTIP', 'OPEN PO', 'JASTIP', 'PRE-ORDER'].map((t) => `<option ${t === e.title ? 'selected' : ''}>${t}</option>`).join('')}</select></div>
+        <div class="field"><label>Negara</label><input class="input" id="eCountry" value="${esc(e.country)}" placeholder="mis. Thailand"></div>
+      </div>
+      <div class="field"><label>Bendera</label><div class="chips" style="flex-wrap:wrap">${FLAGS.map((f) => `<button type="button" class="chip ${f === e.flag ? 'on' : ''}" data-flag="${f}" style="font-size:1.2rem;padding:6px 10px">${f}</button>`).join('')}</div></div>
+      <div class="field"><label>Warna tema</label><div class="row" style="flex-wrap:wrap">${COLORS.map((col) => `<button type="button" class="swatch ${col === e.color ? 'on' : ''}" data-color="${col}" style="background:${col}" aria-label="${col}"></button>`).join('')}</div></div>
+      <div class="field"><label>Tagline (tampil di web)</label><input class="input" id="eTag" value="${esc(e.tagline)}"></div>
+      <div class="field"><label>Foto banner kota (opsional)</label>
+        <div class="photos" id="eBanner"></div>
+        <div class="help">Pakai foto kota milik sendiri atau yang boleh dipakai. Tanpa foto, web memakai warna tema + bendera.</div></div>
+    </section>
+    <section class="card">
+      <h2>Periode & status PO</h2>
+      <div class="two">
+        <div class="field"><label>Mulai PO</label><input class="input" type="date" id="eStart" value="${esc(e.poStart)}"></div>
+        <div class="field"><label>Tutup PO</label><input class="input" type="date" id="eEnd" value="${esc(e.poEnd)}"></div>
+      </div>
+      <div class="field"><label>Status</label><select class="input" id="eStatus">${EV_STATUS.map(([k, l]) => `<option value="${k}" ${k === e.status ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+      <div class="field"><label>Estimasi tiba</label><input class="input" id="eEta" value="${esc(e.eta)}" placeholder="mis. akhir November 2026"></div>
+      <div class="field"><label>Info PO (tampil di web)</label><textarea class="input" id="eNote" placeholder="mis. DP 50%, pelunasan saat barang tiba.">${esc(e.note)}</textarea></div>
+    </section>
+    <section class="card">
+      <h2>Harga & markup</h2>
+      <div class="two">
+        <div class="field"><label>Mata uang belanja</label><select class="input" id="eCur">${curOptions(e.currency)}</select></div>
+        <div class="field"><label>Kurs dikunci (opsional)</label><input class="input" id="eRate" data-money data-dec="4" inputmode="decimal" value="${esc(e.lockedRate)}" placeholder="kosong = kurs live"></div>
+      </div>
+      <div class="two">
+        <div class="field"><label>Jenis fee</label><select class="input" id="eFeeType"><option value="percent" ${e.feeType === 'percent' ? 'selected' : ''}>Persen (%)</option><option value="flat" ${e.feeType === 'flat' ? 'selected' : ''}>Flat (Rp)</option></select></div>
+        <div class="field"><label>Nilai fee</label><input class="input" id="eFee" data-money data-dec="2" inputmode="decimal" value="${esc(e.feeValue)}"></div>
+      </div>
+      <div class="two">
+        <div class="field"><label>Ongkir per kg (Rp)</label><input class="input" id="eShip" data-money inputmode="decimal" value="${esc(e.shipPerKg)}"></div>
+        <div class="field"><label>Pembulatan</label><select class="input" id="eRound">${[0, 500, 1000, 5000, 10000].map((v) => `<option value="${v}" ${v === num(e.rounding) ? 'selected' : ''}>${v ? fmtIDR(v) : 'Tanpa'}</option>`).join('')}</select></div>
+      </div>
+    </section>
+    <div class="btn-col">
+      <button class="btn primary" id="eSave">Simpan event</button>
+      ${id ? `<button class="btn" id="eActive">Jadikan event aktif di HP ini</button>${webBase() ? '<button class="btn" id="eShare">Bagikan link katalog event</button>' : ''}<button class="btn danger" id="eDel">Hapus event</button>` : ''}
+    </div>`;
+  const preview = () => { $('#evPreview').innerHTML = eventHero({ ...e, name: $('#eName').value || 'Nama event', title: $('#eTitle').value, poStart: $('#eStart').value, poEnd: $('#eEnd').value, status: $('#eStatus').value, currency: $('#eCur').value, feeType: $('#eFeeType').value, feeValue: num($('#eFee').value) }); };
+  const drawBanner = async () => { $('#eBanner').innerHTML = e.banner ? photoTiles([e.banner], true) : photoAdd('banner', 'Galeri'); await hydratePhotos($('#eBanner')); preview(); };
+  await drawBanner();
+  ['eName', 'eTitle', 'eStart', 'eEnd', 'eStatus', 'eCur', 'eFeeType', 'eFee'].forEach((k) => { $('#' + k).addEventListener('input', preview); $('#' + k).addEventListener('change', preview); });
+  $$('[data-flag]').forEach((b) => b.onclick = () => { e.flag = b.dataset.flag; $$('[data-flag]').forEach((x) => x.classList.toggle('on', x === b)); preview(); });
+  $$('[data-color]').forEach((b) => b.onclick = () => { e.color = b.dataset.color; $$('[data-color]').forEach((x) => x.classList.toggle('on', x === b)); preview(); });
+  $('#eBanner').onchange = async (ev2) => { if (ev2.target.dataset.addPhoto) { const ids = await savePhotos([ev2.target.files[0]]); e.banner = ids[0]; drawBanner(); } };
+  $('#eBanner').addEventListener('click', (ev2) => { const rm = ev2.target.closest('[data-rm-photo]'); if (rm) { ev2.preventDefault(); e.banner = ''; drawBanner(); } });
+  $('#eSave').onclick = async () => {
+    const name = $('#eName').value.trim(); const code = $('#eCode').value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!name || !code) return toast('Nama & kode event wajib diisi');
+    if (EVENTS.some((x) => x.id !== e.id && (x.code || '').toUpperCase() === code)) return toast('Kode ' + code + ' sudah dipakai event lain');
+    Object.assign(e, { name, code, title: $('#eTitle').value, country: $('#eCountry').value.trim(), tagline: $('#eTag').value.trim(), poStart: $('#eStart').value, poEnd: $('#eEnd').value,
+      status: $('#eStatus').value, eta: $('#eEta').value.trim(), note: $('#eNote').value.trim(), currency: $('#eCur').value, lockedRate: num($('#eRate').value) || '',
+      feeType: $('#eFeeType').value, feeValue: num($('#eFee').value), shipPerKg: num($('#eShip').value), rounding: num($('#eRound').value) });
+    await saveRow('events', e); await loadEvents();
+    if (!CUR_EV) await setCurEv(e.id);
+    renderChrome(); toast('Event disimpan ✓'); location.hash = '#/event';
+  };
+  const on = (sel, fn) => { const x = $(sel); if (x) x.onclick = fn; };
+  on('#eActive', async () => { await setCurEv(e.id); toast('Event aktif: ' + evLabel(e)); });
+  on('#eShare', () => shareText(`${e.title} ${e.name}`, `${e.title} ${e.name}${e.poStart || e.poEnd ? ' (' + fmtRangeD(e.poStart, e.poEnd) + ')' : ''} — ${S.business}\n${webBase()}?e=${encodeURIComponent((e.code || '').toLowerCase())}`));
+  on('#eDel', async () => {
+    const n = (await DB.all('orders')).filter((o) => o.eventId === e.id).length;
+    if (n) return toast(`Event masih punya ${n} pesanan — ubah status ke "Selesai (arsip)" saja`);
+    if (!(await confirmSheet(`Hapus event ${e.name}?`, 'Hapus'))) return;
+    await removeRow('events', e); await loadEvents(); renderChrome(); location.hash = '#/event';
+  });
 }
 
 /* ================= Views: Pesanan ================= */
@@ -1069,7 +1257,8 @@ async function viewOrders(params) {
       default: return o.status === f;
     }
   };
-  const list = orders.filter(match)
+  const evf = viewOrders.ev ?? '';
+  const list = orders.filter(match).filter((o) => !evf || o.eventId === evf)
     .filter((o) => !q || [o.code, o.trip, cmap[o.customerId]?.name, cmap[o.customerId]?.phone, ...(o.items || []).map((i) => i.name)].join(' ').toLowerCase().includes(q))
     .sort((a, b) => b.createdAt - a.createdAt);
   const filters = [['masuk', `Masuk${waiting ? ` (${waiting})` : ''}`], ['saya', 'Pesanan saya'], ['aktif', 'Aktif'], ...(isShopper() ? [] : [['belum', 'Belum lunas']]),
@@ -1079,12 +1268,13 @@ async function viewOrders(params) {
     <p class="eyebrow">Pesanan</p>
     <h1 class="page-title">Daftar titipan</h1>
     <div class="row" style="margin-bottom:12px"><a class="btn sm" href="#/belanja">🛒 Daftar belanja</a></div>
+    ${EVENTS.length > 1 ? evChips(evf, 'data-evo') : ''}
     <div class="search"><input class="input" id="oq" placeholder="Cari kode, customer, nomor, barang…" value="${esc(viewOrders.q || '')}"></div>
     <div class="chips">${filters.map(([k, l]) => `<button class="chip ${k === f ? 'on' : ''}" data-f="${k}">${l}</button>`).join('')}</div>
     <div id="olist">${list.length ? list.map((o) => {
       const t = orderTotals(o, pm[o.id]); const cu = cmap[o.customerId];
       return `<a class="list-item" href="#/pesanan/${o.id}">
-        <div class="avatar">${esc((cu?.name || '?').slice(0, 1).toUpperCase())}</div>
+        <div class="avatar">${esc(evById(o.eventId)?.flag || (cu?.name || '?').slice(0, 1).toUpperCase())}</div>
         <div style="flex:1;min-width:0">
           <div class="title">${esc(cu?.name || 'Tanpa customer')}</div>
           <div class="sub">#${esc(o.code)} · ${t.qty} barang${o.trip ? ' · ' + esc(o.trip) : ''}${o.picName ? ' · 👤 ' + esc(o.picName) : ''}</div>
@@ -1095,13 +1285,14 @@ async function viewOrders(params) {
         ${isShopper() ? '' : `<div class="amount">${fmtIDR(t.total)}</div>`}</a>`;
     }).join('') : `<div class="empty"><div class="big">🛍️</div>Belum ada pesanan di sini.${canSell() ? '<br>Tekan <b>+</b> untuk mencatat titipan baru.' : ''}</div>`}</div>
     ${canSell() ? `<button class="fab" aria-label="Pesanan baru" onclick="location.hash='#/pesanan/baru'">+</button>` : ''}`;
+  $$('[data-evo]').forEach((b) => b.onclick = () => { viewOrders.ev = b.dataset.evo; viewOrders(); });
   $$('[data-f]').forEach((b) => b.onclick = () => { viewOrders.filter = b.dataset.f; if (location.hash.includes('?')) location.replace('#/pesanan'); else viewOrders(); });
   const qi = $('#oq');
   qi.oninput = () => { viewOrders.q = qi.value; clearTimeout(viewOrders._t); viewOrders._t = setTimeout(async () => { await viewOrders(); const n = $('#oq'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); }, 250); };
 }
 
-function blankItem() {
-  const cur = S.currency || 'THB';
+function blankItem(ev) {
+  const cur = evCfg(ev).currency || 'THB';
   return { id: uid(), name: '', qty: 1, weight: '', buyPrice: '', buyCur: cur, sellPrice: '', sellCur: 'IDR', rate: rateOf(cur) || '', photos: [], note: '' };
 }
 
@@ -1115,12 +1306,15 @@ async function viewOrderForm(id) {
     if (!o) { location.hash = '#/pesanan'; return; }
     o = JSON.parse(JSON.stringify(o));
   } else {
-    o = { id: 'o_' + uid(), code: newCode(), customerId: viewOrderForm.presetCustomer || '', trip: S.trip || '', status: 'baru', source: 'wa', items: [blankItem()], receipts: [], shipping: '', discount: '', note: '', pic: ME.id, picName: ME.name, createdAt: Date.now() };
+    const ev0 = curEv();
+    o = { id: 'o_' + uid(), code: eventCode(ev0), eventId: ev0?.id || '', customerId: viewOrderForm.presetCustomer || '', trip: ev0?.name || '', status: 'baru', source: 'wa', items: [blankItem(ev0)], receipts: [], shipping: '', discount: '', note: '', pic: ME.id, picName: ME.name, createdAt: Date.now() };
     viewOrderForm.presetCustomer = '';
   }
   o.items.forEach((it) => { it.photos = it.photos || []; if (!num(it.rate)) it.rate = rateOf(it.buyCur) || ''; });
   o.receipts = o.receipts || [];
   const baseUpdatedAt = o.updatedAt || 0;
+  const oEv = () => evById(o.eventId) || null;
+  const oCfg = () => evCfg(oEv());
   const paidSoFar = isNew ? 0 : await paidOf(o.id);
   const custName = () => customers.find((c) => c.id === o.customerId)?.name;
 
@@ -1153,11 +1347,11 @@ async function viewOrderForm(id) {
       <details class="calc"><summary>Hitung harga jual</summary><div class="calc-body">
         <div class="two">
           <div class="field"><label data-rate-lbl>Kurs ${esc(it.buyCur)} → IDR</label><input class="input" data-c="rate" data-money data-dec="4" inputmode="decimal" value="${esc(it.rate)}"></div>
-          <div class="field"><label>Ongkir/kg (Rp)</label><input class="input" data-c="ship" data-money inputmode="decimal" value="${esc(S.shipPerKg || '')}"></div>
+          <div class="field"><label>Ongkir/kg (Rp)</label><input class="input" data-c="ship" data-money inputmode="decimal" value="${esc(oCfg().shipPerKg || '')}"></div>
         </div>
         <div class="two">
-          <div class="field"><label>Jenis fee</label><select class="input" data-c="feeType"><option value="percent" ${S.fee.type === 'percent' ? 'selected' : ''}>Persen</option><option value="flat" ${S.fee.type === 'flat' ? 'selected' : ''}>Flat (Rp)</option></select></div>
-          <div class="field"><label>Nilai fee</label><input class="input" data-c="fee" data-money data-dec="2" inputmode="decimal" value="${esc(S.fee.value)}"></div>
+          <div class="field"><label>Jenis fee</label><select class="input" data-c="feeType"><option value="percent" ${oCfg().fee.type === 'percent' ? 'selected' : ''}>Persen</option><option value="flat" ${oCfg().fee.type === 'flat' ? 'selected' : ''}>Flat (Rp)</option></select></div>
+          <div class="field"><label>Nilai fee</label><input class="input" data-c="fee" data-money data-dec="2" inputmode="decimal" value="${esc(oCfg().fee.value)}"></div>
         </div>
         <div class="result" data-calc-result></div>
         <button type="button" class="btn primary" data-act="apply" style="margin-top:12px">Pakai harga ini</button>
@@ -1168,13 +1362,13 @@ async function viewOrderForm(id) {
 
   view.innerHTML = `
     <button class="back" onclick="history.back()">‹ Kembali</button>
-    <p class="eyebrow">${isNew ? 'Pesanan baru' : 'Ubah pesanan'}</p>
+    <p class="eyebrow">${isNew ? 'Pesanan baru' : 'Ubah pesanan'}${oEv() ? ' · ' + esc(evLabel(oEv())) : ''}</p>
     <h1 class="page-title">#${esc(o.code)}</h1>
     <section class="card">
       <div class="field"><label class="req">Customer</label>
         <button type="button" class="btn" id="pickCust" style="justify-content:space-between"><span id="custLbl">${esc(custName() || 'Pilih customer…')}</span><span>›</span></button></div>
       <div class="two">
-        <div class="field"><label>Trip / event</label><input class="input" id="oTrip" value="${esc(o.trip)}" placeholder="mis. Bangkok Okt 26"></div>
+        <div class="field"><label>Event</label><select class="input" id="oEvent">${EVENTS.filter((x) => x.status !== 'done' || x.id === o.eventId).map((x) => `<option value="${x.id}" ${x.id === o.eventId ? 'selected' : ''}>${esc(evLabel(x))}</option>`).join('')}${!o.eventId ? `<option value="" selected>${esc(o.trip || 'Tanpa event')}</option>` : ''}</select></div>
         <div class="field"><label>Status</label><select class="input" id="oStatus">${STATUSES.filter(([k]) => k !== 'menunggu' || o.status === 'menunggu').map(([k, l]) => `<option value="${k}" ${k === o.status ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
       </div>
       ${o.source === 'web' ? '<p class="help">Sumber: pesanan dari web katalog</p>' : `<div class="field" style="margin-bottom:0"><label>Sumber pesanan</label>
@@ -1224,9 +1418,10 @@ async function viewOrderForm(id) {
     const it = o.items[i]; const card = cardOf(i);
     const g = (k) => card && $(`[data-c="${k}"]`, card);
     const rate = quick ? itemRate(it) : num(g('rate')?.value) || itemRate(it);
-    const fee = quick ? S.fee : { type: g('feeType')?.value || S.fee.type, value: num(g('fee')?.value) };
-    const ship = quick ? S.shipPerKg : num(g('ship')?.value);
-    return calcSell({ buy: it.buyPrice, rate, weightG: it.weight, fee, shipPerKg: ship, rounding: S.rounding });
+    const cfg = oCfg();
+    const fee = quick ? cfg.fee : { type: g('feeType')?.value || cfg.fee.type, value: num(g('fee')?.value) };
+    const ship = quick ? cfg.shipPerKg : num(g('ship')?.value);
+    return calcSell({ buy: it.buyPrice, rate, weightG: it.weight, fee, shipPerKg: ship, rounding: cfg.rounding });
   };
   const updateItemHelp = (i) => {
     const it = o.items[i]; const card = cardOf(i); if (!card) return;
@@ -1334,9 +1529,16 @@ async function viewOrderForm(id) {
   const setSrc = (v) => { o.source = v; if (srcSeg) $$('button', srcSeg).forEach((b) => b.classList.toggle('on', b.dataset.v === v)); };
   if (srcSeg) { setSrc(o.source === 'admin' ? 'admin' : 'wa'); $$('button', srcSeg).forEach((b) => b.onclick = () => setSrc(b.dataset.v)); }
 
-  $('#addItem').onclick = async () => { o.items.push(blankItem()); await renderItems(); cardOf(o.items.length - 1).scrollIntoView({ behavior: 'smooth', block: 'start' }); };
-  $('#addFromProduct').onclick = () => pickProduct(async (p) => {
-    const it = { ...blankItem(), name: p.name, productId: p.id, productPhoto: p.photo || '', buyPrice: p.buyPrice || '', buyCur: p.buyCur || S.currency, weight: p.weight || '', sellPrice: p.sellPrice || '', sellCur: 'IDR' };
+  $('#oEvent').onchange = async () => {
+    const ne = evById($('#oEvent').value); if (!ne) return;
+    o.eventId = ne.id;
+    o.items.forEach((it) => { if (!num(it.buyPrice) && !it.productId) { it.buyCur = ne.currency; it.rate = rateOf(ne.currency) || ''; } });
+    await renderItems(); updateSum();
+    toast('Pengaturan harga mengikuti event ' + ne.name);
+  };
+  $('#addItem').onclick = async () => { o.items.push(blankItem(oEv())); await renderItems(); cardOf(o.items.length - 1).scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+  $('#addFromProduct').onclick = () => pickProduct(o.eventId, async (p) => {
+    const it = { ...blankItem(oEv()), name: p.name, productId: p.id, productPhoto: p.photo || '', buyPrice: p.buyPrice || '', buyCur: p.buyCur || oCfg().currency, weight: p.weight || '', sellPrice: p.sellPrice || '', sellCur: 'IDR' };
     it.rate = await ensureRate(it.buyCur) || '';
     const last = o.items[o.items.length - 1];
     if (o.items.length === 1 && !last.name && !num(last.buyPrice)) o.items = [it]; else o.items.push(it);
@@ -1348,7 +1550,9 @@ async function viewOrderForm(id) {
   const pf = $('#payFull'); if (pf) pf.onclick = () => { $('#oPaid').value = orderTotals(o).total; updateSum(); };
 
   const save = async () => {
-    o.trip = $('#oTrip').value.trim(); o.status = $('#oStatus').value; o.note = $('#oNote').value;
+    const evSel = evById($('#oEvent').value);
+    if (evSel) { o.eventId = evSel.id; o.trip = evSel.name; if (isNew && !o.code.startsWith(evSel.code.toUpperCase() + '-')) o.code = eventCode(evSel); }
+    o.status = $('#oStatus').value; o.note = $('#oNote').value;
     o.items = o.items.filter((it) => it.name.trim() || num(it.buyPrice) || num(it.sellPrice));
     if (!o.customerId) { toast('Pilih customer dulu'); return null; }
     if (!o.items.length) { o.items = [blankItem()]; await renderItems(); toast('Tambahkan minimal 1 barang'); return null; }
@@ -1371,7 +1575,6 @@ async function viewOrderForm(id) {
     if (isNew && num($('#oPaid').value) > 0) {
       await addPayment({ id: 'pay_' + uid(), orderId: o.id, amount: num($('#oPaid').value), method: $('#oPayMethod').value, note: 'DP awal', createdAt: Date.now(), updatedByName: ME.name });
     }
-    if (o.trip && o.trip !== S.trip && isOwner()) { S.trip = o.trip; await saveShared(); }
     FORM_OPEN = false;
     return o;
   };
@@ -1398,8 +1601,8 @@ async function viewOrderForm(id) {
   }));
 }
 
-async function pickProduct(onPick) {
-  const products = (await DB.all('products')).sort((a, b) => (a.brand || '').localeCompare(b.brand || '') || a.name.localeCompare(b.name));
+async function pickProduct(evId, onPick) {
+  const products = (await DB.all('products')).filter((p) => !evId || !(p.events || []).length || p.events.includes(evId)).sort((a, b) => (a.brand || '').localeCompare(b.brand || '') || a.name.localeCompare(b.name));
   if (!products.length) return toast('Katalog produk masih kosong');
   openSheet(`<h3>Pilih produk</h3><input class="input" id="pq" placeholder="Cari produk / brand…"><div class="pick" id="plist"></div>
     <button class="btn ghost" data-close>Tutup</button>`, (s) => {
@@ -1458,7 +1661,7 @@ function buildNota(o, cu, paid = 0) {
     nama: cu?.name || '', kode: o.code, trip: o.trip ? ` (${o.trip})` : '', rincian,
     subtotal: fmtIDR(t.subtotal), ongkir: fmtIDR(t.shipping), diskon: fmtIDR(t.discount), total: fmtIDR(t.total),
     dibayar: fmtIDR(t.paid), sisa: fmtIDR(t.due), status: statusLabel(o.status), usaha: S.business || '',
-    lacak, katalog: webBase(),
+    lacak, katalog: webBase(), event: evById(o.eventId) ? evLabel(evById(o.eventId)) : (o.trip || ''),
   };
   let tpl = S.template || DEFAULT_TEMPLATE;
   if (!lacak) tpl = tpl.split('\n').filter((l) => !l.includes('{lacak}')).join('\n');
@@ -1598,11 +1801,12 @@ async function viewShopping() {
   const [orders, customers] = await Promise.all([DB.all('orders'), DB.all('customers')]);
   const cmap = Object.fromEntries(customers.map((c) => [c.id, c]));
   const active = orders.filter((o) => ['baru', 'dibeli'].includes(o.status));
-  const trips = [...new Set(active.map((o) => o.trip).filter(Boolean))];
-  const trip = viewShopping.trip ?? (trips.includes(S.trip) ? S.trip : '');
+  const evS = viewShopping.ev ?? (curEv()?.id || '');
+  const evObj = evById(evS);
+  const trip = evObj ? evObj.name : '';
   const showDone = !!viewShopping.showDone;
   const groups = new Map();
-  active.filter((o) => !trip || o.trip === trip).forEach((o) => (o.items || []).forEach((it, idx) => {
+  active.filter((o) => !evS || o.eventId === evS || (!o.eventId && o.trip === trip)).forEach((o) => (o.items || []).forEach((it, idx) => {
     const key = it.productId || it.name.trim().toLowerCase();
     if (!groups.has(key)) groups.set(key, { key, name: it.name, photo: thumbOf(it), buy: num(it.buyPrice) ? fmtCur(it.buyPrice, it.buyCur) : '', rows: [] });
     groups.get(key).rows.push({ o, it, idx });
@@ -1617,7 +1821,7 @@ async function viewShopping() {
     <p class="eyebrow">Untuk shopper</p>
     <h1 class="page-title">Daftar belanja</h1>
     <p class="page-sub">Gabungan semua pesanan yang sudah dikonfirmasi. Centang saat barang sudah dibeli — status pesanan ikut berubah otomatis.</p>
-    ${trips.length ? `<div class="chips">${['', ...trips].map((t) => `<button class="chip ${t === trip ? 'on' : ''}" data-trip="${esc(t)}">${t ? esc(t) : 'Semua trip'}</button>`).join('')}</div>` : ''}
+    ${EVENTS.length ? evChips(evS, 'data-evs') : ''}
     <div class="row between" style="margin-bottom:12px"><b>${totalLeft} barang belum dibeli</b>
       <button class="btn sm" id="toggleDone">${showDone ? 'Sembunyikan yang selesai' : 'Tampilkan yang selesai'}</button></div>
     ${list.length ? list.map((g) => `
@@ -1649,7 +1853,7 @@ async function viewShopping() {
     }
     viewShopping();
   };
-  $$('[data-trip]').forEach((b) => b.onclick = () => { viewShopping.trip = b.dataset.trip; viewShopping(); });
+  $$('[data-evs]').forEach((b) => b.onclick = () => { viewShopping.ev = b.dataset.evs; viewShopping(); });
   $('#toggleDone').onclick = () => { viewShopping.showDone = !showDone; viewShopping(); };
   $$('.group-row').forEach((b) => b.onclick = () => {
     const o = active.find((x) => x.id === b.dataset.o); const it = o.items[+b.dataset.i];
@@ -1669,9 +1873,13 @@ async function viewProducts() {
   setTab('produk');
   const q = (viewProducts.q || '').toLowerCase();
   const all = await DB.all('products');
-  const brands = [...new Set(all.map((p) => p.brand).filter(Boolean))].sort();
+  const evP = viewProducts.ev ?? '';
+  const inEv = all.filter((p) => !evP || !(p.events || []).length || p.events.includes(evP));
+  const catsUsed = [...new Set(inEv.map((p) => p.category).filter(Boolean))];
+  const catSel = viewProducts.cat || '';
   const brand = viewProducts.brand || '';
-  const products = all.filter((p) => (!brand || p.brand === brand) && (!q || (p.name + ' ' + (p.brand || '')).toLowerCase().includes(q)))
+  const brands = [...new Set(inEv.map((p) => p.brand).filter(Boolean))].sort();
+  const products = inEv.filter((p) => (!catSel || p.category === catSel) && (!brand || p.brand === brand) && (!q || (p.name + ' ' + (p.brand || '') + ' ' + (p.category || '')).toLowerCase().includes(q)))
     .sort((a, b) => (a.brand || '').localeCompare(b.brand || '') || num(a.sort) - num(b.sort) || a.name.localeCompare(b.name));
   view.innerHTML = `
     <p class="eyebrow">Katalog</p>
@@ -1679,12 +1887,15 @@ async function viewProducts() {
     <p class="page-sub">Katalog ini juga tampil di web untuk buyer (produk yang ditandai tampil & punya harga jual).</p>
     ${webBase() ? `<button class="btn sm" id="shareCat" style="margin-bottom:12px">🔗 Bagikan link katalog</button>` : ''}
     <div class="search"><input class="input" id="pq" placeholder="Cari produk / brand…" value="${esc(viewProducts.q || '')}"></div>
-    ${brands.length ? `<div class="chips">${['', ...brands].map((b) => `<button class="chip ${b === brand ? 'on' : ''}" data-brand="${esc(b)}">${b ? esc(b) : 'Semua'}</button>`).join('')}</div>` : ''}
+    ${EVENTS.length ? evChips(evP, 'data-evp') : ''}
+    ${catsUsed.length ? `<div class="chips">${['', ...catsUsed].map((c) => `<button class="chip ${c === catSel ? 'on' : ''}" data-cat="${esc(c)}">${c ? esc(catIcon(c) + ' ' + c) : 'Semua kategori'}</button>`).join('')}</div>` : ''}
+    ${brands.length > 1 ? `<div class="chips">${['', ...brands].map((b) => `<button class="chip ${b === brand ? 'on' : ''}" data-brand="${esc(b)}">${b ? esc(b) : 'Semua brand'}</button>`).join('')}</div>` : ''}
     ${products.length ? products.map((p) => `
       <a class="list-item" href="#/produk/${p.id}">
         ${thumbHTML(p.photo)}
         <div style="flex:1;min-width:0"><div class="title">${esc(p.name)}</div>
-          <div class="sub">${p.brand ? esc(p.brand) : ''}${num(p.buyPrice) && !isShopper() ? ' · beli ' + fmtCur(p.buyPrice, p.buyCur) : ''}${p.published === false ? ' · <b>tersembunyi</b>' : ''}</div></div>
+          <div class="sub">${(p.events || []).map((id) => esc(evById(id)?.flag || '')).join('')} ${p.brand ? esc(p.brand) : ''}${p.category ? ' · ' + esc(p.category) : ''}${num(p.buyPrice) && !isShopper() ? ' · beli ' + fmtCur(p.buyPrice, p.buyCur) : ''}${p.published === false ? ' · <b>tersembunyi</b>' : ''}</div>
+          ${p.badge || p.featured ? `<div style="margin-top:4px">${p.badge ? `<span class="badge st-menunggu">${esc(p.badge)}</span> ` : ''}${p.featured ? '<span class="badge pay-lunas">Pilihan</span>' : ''}</div>` : ''}</div>
         <div class="amount">${num(p.sellPrice) ? fmtIDR(p.sellPrice) : ''}</div></a>`).join('')
     : `<div class="empty"><div class="big">📦</div>Belum ada produk.</div>`}
     ${canSell() ? `<button class="fab" aria-label="Produk baru" onclick="location.hash='#/produk/baru'">+</button>` : ''}`;
@@ -1692,7 +1903,9 @@ async function viewProducts() {
   const qi = $('#pq');
   qi.oninput = () => { viewProducts.q = qi.value; clearTimeout(viewProducts._t); viewProducts._t = setTimeout(async () => { await viewProducts(); const n = $('#pq'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); }, 250); };
   $$('[data-brand]').forEach((b) => b.onclick = () => { viewProducts.brand = b.dataset.brand; viewProducts(); });
-  const sc = $('#shareCat'); if (sc) sc.onclick = () => shareText('Katalog ' + S.business, `Katalog jastip ${S.business}${S.trip ? ' — ' + S.trip : ''}:\n${webBase()}`);
+  $$('[data-cat]').forEach((b) => b.onclick = () => { viewProducts.cat = b.dataset.cat; viewProducts(); });
+  $$('[data-evp]').forEach((b) => b.onclick = () => { viewProducts.ev = b.dataset.evp; viewProducts.cat = ''; viewProducts.brand = ''; viewProducts(); });
+  const sc = $('#shareCat'); if (sc) sc.onclick = () => { const e = evById(evP) || curEv(); shareText('Katalog ' + S.business, `${e ? `${e.title} ${e.name}${e.poStart || e.poEnd ? ' (' + fmtRangeD(e.poStart, e.poEnd) + ')' : ''}` : 'Katalog jastip'} — ${S.business}\n${webBase()}${e ? '?e=' + encodeURIComponent(e.code.toLowerCase()) : ''}`); };
 }
 
 async function viewProductForm(id) {
@@ -1700,7 +1913,10 @@ async function viewProductForm(id) {
   let p = id ? await DB.get('products', id) : null;
   if (id && !p) { location.hash = '#/produk'; return; }
   const ro = !canSell();
-  p = p ? { ...p } : { id: 'p_' + uid(), name: '', brand: '', description: '', buyPrice: '', buyCur: S.currency, sellPrice: '', weight: '', photo: '', note: '', published: true, sort: 0, createdAt: Date.now() };
+  const ev0 = viewProducts.ev ? evById(viewProducts.ev) : curEv();
+  p = p ? { ...p, events: [...(p.events || [])] } : { id: 'p_' + uid(), name: '', brand: '', description: '', buyPrice: '', buyCur: evCfg(ev0).currency, sellPrice: '', weight: '', photo: '', note: '', published: true, sort: 0, createdAt: Date.now(),
+    category: viewProducts.cat || '', events: ev0 ? [ev0.id] : [], badge: '', featured: false };
+  const pEv = () => evById(p.events[0]) || curEv();
   const brands = [...new Set((await DB.all('products')).map((x) => x.brand).filter(Boolean))].sort();
   view.innerHTML = `
     <button class="back" onclick="location.hash='#/produk'">‹ Produk</button>
@@ -1715,6 +1931,14 @@ async function viewProductForm(id) {
         <div class="field"><label>Berat (gram)</label><input class="input" id="pWeight" data-money inputmode="decimal" value="${esc(p.weight)}"></div>
       </div>
       <div class="field"><label>Deskripsi (tampil di web)</label><textarea class="input" id="pDesc">${esc(p.description)}</textarea></div>
+      <div class="field"><label>Kategori</label><select class="input" id="pCat"><option value="">— Pilih kategori —</option>${categories().map((c) => `<option value="${esc(c.name)}" ${c.name === p.category ? 'selected' : ''}>${esc(c.icon + ' ' + c.name)}</option>`).join('')}${p.category && !categories().some((c) => c.name === p.category) ? `<option selected>${esc(p.category)}</option>` : ''}</select></div>
+      <div class="field"><label>Tersedia di event</label>
+        <div class="chips" style="flex-wrap:wrap" id="pEvents">${EVENTS.filter((e) => e.status !== 'done' || p.events.includes(e.id)).map((e) => `<button type="button" class="chip ${p.events.includes(e.id) ? 'on' : ''}" data-pev="${e.id}">${esc(evLabel(e))}</button>`).join('') || '<span class="muted small">Belum ada event</span>'}</div>
+        <div class="help">Tidak dipilih = tampil di semua event.</div></div>
+      <div class="two">
+        <div class="field"><label>Label di web</label><select class="input" id="pBadge">${['', 'Best Seller', 'Ready JKT', 'Baru', 'Promo', 'Limited'].map((b) => `<option value="${b}" ${b === p.badge ? 'selected' : ''}>${b || 'Tanpa label'}</option>`).join('')}</select></div>
+        <div class="toggle-row" style="padding-top:28px"><span>Produk pilihan</span><label class="switch"><input type="checkbox" id="pFeat" ${p.featured ? 'checked' : ''}><span></span></label></div>
+      </div>
       ${isShopper() ? '' : `<div class="field">
         <div class="money-row"><label class="label-row">Harga beli</label><label class="label-row">Mata uang</label></div>
         <div class="money-row"><input class="input" id="pBuy" data-money data-dec="2" inputmode="decimal" value="${esc(p.buyPrice)}"><select class="input" id="pCur">${curOptions(p.buyCur || 'THB')}</select></div>
@@ -1746,18 +1970,24 @@ async function viewProductForm(id) {
   if (ro) return;
   $('#pPhoto').onchange = async (e) => { if (e.target.dataset.addPhoto) { const ids = await savePhotos([e.target.files[0]]); p.photo = ids[0]; drawPhoto(); } };
   $('#pPhoto').addEventListener('click', (e) => { const rm = e.target.closest('[data-rm-photo]'); if (rm) { e.preventDefault(); p.photo = ''; drawPhoto(); } });
+  $$('[data-pev]').forEach((b) => b.onclick = () => {
+    const id = b.dataset.pev; p.events = p.events.includes(id) ? p.events.filter((x) => x !== id) : [...p.events, id];
+    b.classList.toggle('on', p.events.includes(id));
+  });
   $('#pBuy').oninput = help;
   $('#pCur').onchange = async () => { await ensureRate($('#pCur').value); help(); };
   $('#pCalc').onclick = () => {
     const cur = $('#pCur').value; const r = rateOf(cur);
     if (!num($('#pBuy').value)) return toast('Isi harga beli dulu');
     if (!r) return toast('Kurs belum ada');
-    const c = calcSell({ buy: $('#pBuy').value, rate: r, weightG: $('#pWeight').value, fee: S.fee, shipPerKg: S.shipPerKg, rounding: S.rounding });
+    const cfg = evCfg(pEv());
+    const c = calcSell({ buy: $('#pBuy').value, rate: r, weightG: $('#pWeight').value, fee: cfg.fee, shipPerKg: cfg.shipPerKg, rounding: cfg.rounding });
     $('#pSell').value = c.sell; toast(`Harga jual ${fmtIDR(c.sell)}`);
   };
   $('#pSave').onclick = async () => {
     const name = $('#pName').value.trim(); if (!name) return toast('Nama produk wajib diisi');
-    Object.assign(p, { name, brand: $('#pBrand').value.trim(), weight: $('#pWeight').value, description: $('#pDesc').value.trim(), buyPrice: $('#pBuy').value, buyCur: $('#pCur').value, sellPrice: $('#pSell').value, note: $('#pNote').value, published: $('#pPub').checked });
+    Object.assign(p, { name, brand: $('#pBrand').value.trim(), weight: $('#pWeight').value, description: $('#pDesc').value.trim(), buyPrice: $('#pBuy').value, buyCur: $('#pCur').value, sellPrice: $('#pSell').value, note: $('#pNote').value, published: $('#pPub').checked,
+      category: $('#pCat').value, badge: $('#pBadge').value, featured: $('#pFeat').checked });
     await saveRow('products', p);
     toast('Produk disimpan ✓'); location.hash = '#/produk';
   };
@@ -1887,6 +2117,11 @@ async function viewSettings() {
       <button class="btn" id="syncNow" style="margin-top:12px">↻ Sinkron sekarang</button>
     </section>
 
+    <section class="card"><div class="card-head"><h2>Event jastip</h2><a href="#/event">${isOwner() ? 'Kelola' : 'Lihat'} →</a></div>
+      ${EVENTS.length ? EVENTS.filter((e) => e.status !== 'done').map((e) => `<div class="kv"><span>${esc(evLabel(e))}</span><span>${esc(evStatusLabel(e.status))}${e.id === curEv()?.id ? ' · <b style="color:var(--accent)">aktif</b>' : ''}</span></div>`).join('') : '<p class="muted">Belum ada event.</p>'}
+      <button class="btn" id="pickEv" style="margin-top:12px">Ganti event aktif</button>
+    </section>
+
     ${webBase() ? `<section class="card"><h2>Web untuk buyer</h2>
       <p class="hint">Katalog + keranjang. Pesanan dari web masuk ke tab Pesanan sebagai <b>Masuk</b>.</p>
       <div class="kv"><span>Link</span><span class="small" style="word-break:break-all">${esc(webBase())}</span></div>
@@ -1902,31 +2137,28 @@ async function viewSettings() {
     </section>
 
     <section class="card">
-      <h2>Profil usaha & PO</h2>
+      <h2>Profil usaha</h2>
       <div class="field"><label>Nama usaha</label><input class="input" id="sBiz" value="${esc(S.business)}"></div>
       <div class="field"><label>No. WhatsApp usaha (penerima order web)</label><input class="input" id="sWa" inputmode="tel" value="${esc(S.ownerWa ? fmtPhone(S.ownerWa) : '')}"></div>
-      <div class="two">
-        <div class="field"><label>Trip aktif</label><input class="input" id="sTrip" value="${esc(S.trip)}" placeholder="mis. Bangkok Okt 26"></div>
-        <div class="field"><label>Mata uang belanja</label><select class="input" id="sCur">${curOptions(S.currency)}</select></div>
-      </div>
-      <div class="toggle-row"><span>PO dibuka (web menerima pesanan)</span><label class="switch"><input type="checkbox" id="sPo" ${S.poOpen ? 'checked' : ''}><span></span></label></div>
-      <div class="field"><label>Batas PO</label><input class="input" id="sDeadline" value="${esc(S.poDeadline)}" placeholder="mis. 10 Okt 2026"></div>
-      <div class="field"><label>Info PO (tampil di web)</label><textarea class="input" id="sPoNote" placeholder="mis. Estimasi tiba 2 minggu setelah PO ditutup. DP 50%.">${esc(S.poNote)}</textarea></div>
       <div class="field"><label>Link web buyer</label><input class="input" id="sWeb" value="${esc(S.webUrl)}"></div>
     </section>
 
     <section class="card">
+      <h2>Kategori produk</h2>
+      <p class="hint">Satu baris satu kategori: emoji lalu nama. Dipakai di aplikasi & web buyer.</p>
+      <textarea class="input" id="sCats" style="min-height:220px">${esc(categories().map((c) => `${c.icon} ${c.name}`).join('\n'))}</textarea>
+    </section>
+
+    <section class="card">
       <h2>Template nota WhatsApp</h2>
-      <p class="hint">Kode: {nama} {kode} {trip} {rincian} {subtotal} {ongkir} {diskon} {total} {dibayar} {sisa} {status} {lacak} {katalog} {usaha}</p>
+      <p class="hint">Kode: {nama} {kode} {trip} {event} {rincian} {subtotal} {ongkir} {diskon} {total} {dibayar} {sisa} {status} {lacak} {katalog} {usaha}</p>
       <textarea class="input" id="sTpl" style="min-height:240px">${esc(S.template)}</textarea>
       <button class="btn ghost" id="sTplReset" style="margin-top:8px">Kembalikan ke template bawaan</button>
     </section>
     <button class="btn primary" id="sSave" style="margin-bottom:16px">Simpan pengaturan (untuk semua admin)</button>`
     : `<section class="card"><h2>Pengaturan usaha</h2>
       <div class="kv"><span>Usaha</span><span>${esc(S.business)}</span></div>
-      <div class="kv"><span>Trip aktif</span><span>${esc(S.trip || '—')}</span></div>
-      <div class="kv"><span>PO</span><span>${S.poOpen ? 'Dibuka' : 'Ditutup'}${S.poDeadline ? ' · s/d ' + esc(S.poDeadline) : ''}</span></div>
-      <div class="kv"><span>Fee bawaan</span><span>${S.fee.type === 'flat' ? fmtIDR(S.fee.value) : S.fee.value + '%'}</span></div>
+      <div class="kv"><span>Event aktif di HP ini</span><span>${esc(evLabel(curEv()))}</span></div>
       <p class="help">Diatur oleh owner.</p></section>`}
 
     <section class="card">
@@ -1942,10 +2174,11 @@ async function viewSettings() {
         <button class="btn" id="bExport">Ekspor cadangan (.json)</button>
       </div>
     </section>`}
-    <p class="muted small center">KuyTitip v2 · Supabase · kurs: open.er-api.com / Frankfurter</p>`;
+    <p class="muted small center">KuyTitip v4 · Supabase · kurs: open.er-api.com / Frankfurter</p>`;
 
   const on = (sel, fn) => { const el = $(sel); if (el) el.onclick = fn; };
   on('#logout', logout);
+  on('#pickEv', pickEventSheet);
   on('#syncNow', async () => { toast('Menyinkronkan…'); await Sync.flush(); try { await Sync.pull(); toast('Sinkron selesai ✓'); } catch (e) { toast('Gagal: ' + (e.message || e)); } viewSettings(); });
   on('#retryFailed', async () => { for (const f of failed) { delete f.failed; delete f.error; await DB.put('outbox', f); } await Sync.flush(); viewSettings(); });
   on('#dropFailed', async () => {
@@ -1953,7 +2186,7 @@ async function viewSettings() {
     await DB.delMany('outbox', failed.map((f) => f.seq)); await kvPut('lastPull', {});
     await Sync.pull({ full: true }).catch(() => {}); viewSettings();
   });
-  on('#shareWeb', () => shareText('Katalog ' + S.business, `Katalog jastip ${S.business}${S.trip ? ' — ' + S.trip : ''}:\n${webBase()}`));
+  on('#shareWeb', () => shareText('Katalog ' + S.business, `Katalog jastip ${S.business}:\n${webBase()}`));
   on('#bCsv', exportCSV);
   on('#bExport', exportBackup);
   if (!isOwner()) return;
@@ -1968,11 +2201,14 @@ async function viewSettings() {
   on('#sTplReset', () => { $('#sTpl').value = DEFAULT_TEMPLATE; });
   on('#sSave', async () => {
     Object.assign(S, {
-      business: $('#sBiz').value.trim() || 'KuyTitip', ownerWa: normPhone($('#sWa').value), trip: $('#sTrip').value.trim(),
-      currency: $('#sCur').value, poOpen: $('#sPo').checked, poDeadline: $('#sDeadline').value.trim(),
-      webUrl: $('#sWeb').value.trim(), poNote: $('#sPoNote').value.trim(), template: $('#sTpl').value || DEFAULT_TEMPLATE,
+      business: $('#sBiz').value.trim() || 'KuyTitip', ownerWa: normPhone($('#sWa').value),
+      webUrl: $('#sWeb').value.trim(), template: $('#sTpl').value || DEFAULT_TEMPLATE,
+      categories: $('#sCats').value.split('\n').map((l) => l.trim()).filter(Boolean).map((l) => {
+        const m = l.match(/^(\p{Extended_Pictographic}[\u{FE0F}\u{200D}\p{Extended_Pictographic}]*)\s*(.+)$/u);
+        return m ? { icon: m[1], name: m[2].trim() } : { icon: '🛍️', name: l };
+      }),
     });
-    await saveShared(); ensureRate(S.currency).then(renderChrome); toast('Pengaturan disimpan untuk semua admin ✓');
+    await saveShared(); toast('Pengaturan disimpan untuk semua admin ✓');
   });
 }
 
@@ -2036,6 +2272,9 @@ const ROUTES = [
   [/^#\/customer$/, viewCustomers],
   [/^#\/customer\/([\w-]+)$/, (m) => viewCustomerDetail(m[1])],
   [/^#\/saya$/, viewSettings],
+  [/^#\/event$/, viewEvents],
+  [/^#\/event\/baru$/, () => viewEventForm(null)],
+  [/^#\/event\/([\w-]+)$/, (m) => viewEventForm(m[1])],
 ];
 const TAB_ROOTS = ['#/beranda', '#/pesanan', '#/produk', '#/customer', '#/saya'];
 async function route(opts = {}) {
@@ -2065,6 +2304,7 @@ async function boot() {
   window.addEventListener('hashchange', () => route());
   document.addEventListener('input', (e) => { if (e.target.matches && e.target.matches('input[data-money]')) formatMoneyLive(e.target); }, true);
   $('#syncBtn').onclick = () => { location.hash = '#/saya'; };
+  $('#rateChip').onclick = pickEventSheet;
   document.addEventListener('focusin', (e) => { if (e.target.matches('input:not([type=file]):not([type=checkbox]), textarea, select')) document.body.classList.add('typing'); });
   document.addEventListener('focusout', () => setTimeout(() => { if (!document.activeElement || !document.activeElement.matches('input, textarea, select')) document.body.classList.remove('typing'); }, 50));
   const App = plugin('App');

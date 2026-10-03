@@ -81,6 +81,38 @@ create table if not exists public.settings (
   updated_by_name text
 );
 
+-- Event jastip (Bangkok, Australia, Jepang, ...). Setiap event punya mata uang,
+-- kurs, fee, ongkir & periode PO sendiri.
+create table if not exists public.events (
+  id text primary key,
+  code text not null,
+  name text not null,
+  title text not null default 'OPEN JASTIP',
+  country text not null default '',
+  flag text not null default '',
+  currency text not null default 'THB',
+  locked_rate numeric,
+  fee_type text not null default 'percent',
+  fee_value numeric not null default 10,
+  ship_per_kg numeric not null default 0,
+  rounding numeric not null default 1000,
+  po_start date,
+  po_end date,
+  eta text not null default '',
+  note text not null default '',
+  tagline text not null default 'Produk original langsung dari tokonya',
+  color text not null default '#ee4a3e',
+  banner text,
+  status text not null default 'draft' check (status in ('draft','open','closed','done')),
+  sort integer not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  updated_by uuid,
+  updated_by_name text,
+  deleted boolean not null default false
+);
+create unique index if not exists events_code_idx on public.events (upper(code)) where not deleted;
+
 create table if not exists public.products (
   id text primary key,
   name text not null,
@@ -166,7 +198,14 @@ create table if not exists public.activity_log (
   detail text not null default ''
 );
 
+alter table public.products add column if not exists category text not null default '';
+alter table public.products add column if not exists events text[] not null default '{}';
+alter table public.products add column if not exists badge text not null default '';
+alter table public.products add column if not exists featured boolean not null default false;
+alter table public.orders add column if not exists event_id text;
 create index if not exists products_updated_idx  on public.products  (updated_at);
+create index if not exists events_updated_idx    on public.events    (updated_at);
+create index if not exists orders_event_idx      on public.orders    (event_id);
 create index if not exists customers_updated_idx on public.customers (updated_at);
 create index if not exists customers_phone_idx   on public.customers (phone);
 create index if not exists orders_updated_idx    on public.orders    (updated_at);
@@ -192,7 +231,7 @@ begin
   if tg_op = 'UPDATE' and tg_table_name <> 'settings' then
     new.created_at := old.created_at;
   end if;
-  if tg_table_name in ('products','customers','orders','payments') and tg_op = 'UPDATE' then
+  if tg_table_name in ('products','customers','orders','payments','events') and tg_op = 'UPDATE' then
     if new.deleted and not old.deleted and auth.uid() is not null and not public.is_owner() then
       raise exception 'Hanya owner yang boleh menghapus data';
     end if;
@@ -255,6 +294,13 @@ begin
                      else 'ubah pembayaran' end;
   elsif tg_table_name = 'settings' then
     v_id := new.id; v_label := 'pengaturan'; v_action := 'ubah pengaturan';
+  elsif tg_table_name = 'events' then
+    v_id := new.id; v_label := new.name;
+    if tg_op = 'INSERT' then v_action := 'buat event';
+    elsif new.deleted and not old.deleted then v_action := 'hapus event';
+    elsif new.status is distinct from old.status then v_action := 'ubah status event'; v_detail := old.status || ' → ' || new.status;
+    else v_action := 'ubah event';
+    end if;
   elsif tg_table_name = 'admins' then
     v_id := new.id::text; v_label := new.name;
     if tg_op = 'INSERT' then v_action := 'admin baru daftar'; v_detail := new.role;
@@ -274,12 +320,12 @@ end $$;
 do $$
 declare t text;
 begin
-  foreach t in array array['settings','products','customers','orders','payments'] loop
+  foreach t in array array['settings','products','customers','orders','payments','events'] loop
     execute format('drop trigger if exists kuytitip_touch on public.%I', t);
     execute format('create trigger kuytitip_touch before insert or update on public.%I
                     for each row execute function public.touch_row()', t);
   end loop;
-  foreach t in array array['settings','products','customers','orders','payments','admins'] loop
+  foreach t in array array['settings','products','customers','orders','payments','admins','events'] loop
     execute format('drop trigger if exists kuytitip_log on public.%I', t);
     execute format('create trigger kuytitip_log after insert or update on public.%I
                     for each row execute function public.log_change()', t);
@@ -298,11 +344,12 @@ alter table public.customers    enable row level security;
 alter table public.orders       enable row level security;
 alter table public.payments     enable row level security;
 alter table public.activity_log enable row level security;
+alter table public.events       enable row level security;
 
 revoke all on public.admins, public.settings, public.products, public.customers,
-              public.orders, public.payments, public.activity_log from anon;
+              public.orders, public.payments, public.activity_log, public.events from anon;
 grant select, insert, update on public.settings, public.products, public.customers,
-              public.orders, public.payments to authenticated;
+              public.orders, public.payments, public.events to authenticated;
 grant select, update on public.admins to authenticated;
 grant select on public.activity_log to authenticated;
 
@@ -347,31 +394,45 @@ create policy kt_payments_update on public.payments for update to authenticated
 
 create policy kt_log_select on public.activity_log for select to authenticated using (public.is_owner());
 
+create policy kt_events_select on public.events for select to authenticated using (public.is_staff());
+create policy kt_events_insert on public.events for insert to authenticated with check (public.is_owner());
+create policy kt_events_update on public.events for update to authenticated
+  using (public.is_owner()) with check (public.is_owner());
+
 -- ---------------------------------------------------------------------
 -- 5. FUNGSI PUBLIK untuk web buyer
 -- ---------------------------------------------------------------------
+drop function if exists public.place_web_order(text, text, jsonb, text, text, text);
+
+-- Event yang tampil di web: dibuka (open) atau ditutup (closed) — draft & selesai disembunyikan
 create or replace function public.catalog() returns jsonb
 language sql stable security definer set search_path = public as $$
   select jsonb_build_object(
     'info', coalesce((select jsonb_build_object(
         'business',   coalesce(nullif(data->>'business',''), 'KuyTitip'),
         'wa',         coalesce(data->>'ownerWa', ''),
-        'trip',       coalesce(data->>'trip', ''),
-        'poOpen',     coalesce((data->>'poOpen')::boolean, true),
-        'poDeadline', coalesce(data->>'poDeadline', ''),
-        'poNote',     coalesce(data->>'poNote', ''))
+        'tagline',    coalesce(data->>'tagline', ''),
+        'categories', coalesce(data->'categories', '[]'::jsonb),
+        'faq',        coalesce(data->'faq', '[]'::jsonb))
       from public.settings where id = 'main'), '{}'::jsonb),
+    'events', coalesce((select jsonb_agg(jsonb_build_object(
+        'id', id, 'code', code, 'name', name, 'title', title, 'country', country, 'flag', flag,
+        'currency', currency, 'poStart', po_start, 'poEnd', po_end, 'eta', eta, 'note', note,
+        'tagline', tagline, 'color', color, 'banner', banner, 'status', status)
+        order by (status = 'open') desc, sort, po_start nulls last, name)
+      from public.events where not deleted and status in ('open','closed')), '[]'::jsonb),
     'products', coalesce((select jsonb_agg(jsonb_build_object(
-        'id', id, 'name', name, 'brand', brand, 'description', description,
+        'id', id, 'name', name, 'brand', brand, 'description', description, 'category', category,
+        'events', events, 'badge', badge, 'featured', featured,
         'price', sell_price, 'photo', photo, 'weight', weight)
-        order by brand, sort, name)
+        order by featured desc, brand, sort, name)
       from public.products
       where published and not deleted and coalesce(sell_price, 0) > 0), '[]'::jsonb))
 $$;
 
 create or replace function public.place_web_order(
   p_name text, p_phone text, p_items jsonb,
-  p_city text default '', p_address text default '', p_note text default '')
+  p_city text default '', p_address text default '', p_note text default '', p_event text default null)
 returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare
@@ -380,12 +441,11 @@ declare
   v_items jsonb := '[]'::jsonb;
   v_item  jsonb;
   v_p     public.products%rowtype;
+  v_ev    public.events%rowtype;
   v_qty   integer;
   v_code  text;
   v_id    text;
   v_token text;
-  v_trip  text := '';
-  v_open  boolean := true;
   v_total numeric := 0;
 begin
   if length(trim(coalesce(p_name, ''))) < 2 then raise exception 'Nama wajib diisi'; end if;
@@ -397,9 +457,9 @@ begin
   end if;
   if jsonb_array_length(p_items) > 40 then raise exception 'Terlalu banyak jenis barang'; end if;
 
-  select coalesce((data->>'poOpen')::boolean, true), coalesce(data->>'trip', '')
-    into v_open, v_trip from public.settings where id = 'main';
-  if v_open is false then raise exception 'PO sedang tutup'; end if;
+  select * into v_ev from public.events where id = p_event and not deleted;
+  if not found then raise exception 'Event jastip tidak ditemukan'; end if;
+  if v_ev.status <> 'open' then raise exception 'PO % sedang tutup', v_ev.name; end if;
 
   if (select count(*) from public.orders o join public.customers c on c.id = o.customer_id
       where c.phone = v_phone and o.source = 'web' and o.created_at > now() - interval '1 hour') >= 5 then
@@ -409,13 +469,14 @@ begin
   for v_item in select * from jsonb_array_elements(p_items) loop
     v_qty := least(greatest(coalesce((v_item->>'qty')::integer, 1), 1), 99);
     select * into v_p from public.products
-      where id = v_item->>'id' and published and not deleted and coalesce(sell_price, 0) > 0;
-    if not found then raise exception 'Produk tidak tersedia lagi: %', coalesce(v_item->>'id', '?'); end if;
+      where id = v_item->>'id' and published and not deleted and coalesce(sell_price, 0) > 0
+        and (cardinality(events) = 0 or v_ev.id = any(events));
+    if not found then raise exception 'Produk tidak tersedia di event ini: %', coalesce(v_item->>'id', '?'); end if;
     v_items := v_items || jsonb_build_array(jsonb_build_object(
       'id', 'i' || substr(md5(random()::text || clock_timestamp()::text), 1, 10),
       'productId', v_p.id, 'name', v_p.name, 'qty', v_qty,
       'weight', coalesce(v_p.weight::text, ''),
-      'buyPrice', coalesce(v_p.buy_price::text, ''), 'buyCur', coalesce(v_p.buy_cur, 'THB'),
+      'buyPrice', coalesce(v_p.buy_price::text, ''), 'buyCur', coalesce(v_p.buy_cur, v_ev.currency),
       'sellPrice', v_p.sell_price, 'sellCur', 'IDR', 'sellIDR', v_p.sell_price,
       'rate', '', 'photos', '[]'::jsonb, 'productPhoto', v_p.photo,
       'note', left(coalesce(v_item->>'note', ''), 200)));
@@ -436,14 +497,14 @@ begin
   end if;
 
   loop
-    v_code := 'W' || to_char(now() at time zone 'Asia/Jakarta', 'YYMM') || '-'
+    v_code := upper(v_ev.code) || '-W' || to_char(now() at time zone 'Asia/Jakarta', 'YYMM') || '-'
               || upper(substr(md5(random()::text || clock_timestamp()::text), 1, 4));
     exit when not exists (select 1 from public.orders where code = v_code);
   end loop;
   v_id := 'o_w' || substr(md5(random()::text || clock_timestamp()::text), 1, 12);
 
-  insert into public.orders (id, code, customer_id, trip, status, source, items, note, subtotal, total)
-  values (v_id, v_code, v_cust, v_trip, 'menunggu', 'web', v_items, left(coalesce(p_note, ''), 500), v_total, v_total)
+  insert into public.orders (id, code, customer_id, event_id, trip, status, source, items, note, subtotal, total)
+  values (v_id, v_code, v_cust, v_ev.id, v_ev.name, 'menunggu', 'web', v_items, left(coalesce(p_note, ''), 500), v_total, v_total)
   returning track_token into v_token;
 
   return jsonb_build_object('code', v_code, 'token', v_token, 'total', v_total);
@@ -453,6 +514,9 @@ create or replace function public.track_order(p_code text, p_token text) returns
 language sql stable security definer set search_path = public as $$
   select jsonb_build_object(
     'code', o.code, 'status', o.status, 'trip', o.trip,
+    'event', (select jsonb_build_object('name', e.name, 'code', e.code, 'flag', e.flag, 'eta', e.eta,
+                'color', e.color, 'banner', e.banner, 'title', e.title)
+              from public.events e where e.id = o.event_id),
     'created_at', o.created_at, 'updated_at', o.updated_at,
     'customer', split_part(coalesce(c.name, ''), ' ', 1),
     'items', (select coalesce(jsonb_agg(jsonb_build_object(
@@ -473,7 +537,7 @@ language sql stable security definer set search_path = public as $$
 $$;
 
 grant execute on function public.catalog() to anon, authenticated;
-grant execute on function public.place_web_order(text, text, jsonb, text, text, text) to anon, authenticated;
+grant execute on function public.place_web_order(text, text, jsonb, text, text, text, text) to anon, authenticated;
 grant execute on function public.track_order(text, text) to anon, authenticated;
 
 -- ---------------------------------------------------------------------
@@ -499,7 +563,7 @@ create policy kt_photos_delete on storage.objects for delete to authenticated
 do $$
 declare t text;
 begin
-  foreach t in array array['settings','products','customers','orders','payments','admins'] loop
+  foreach t in array array['settings','products','customers','orders','payments','admins','events'] loop
     begin
       execute format('alter publication supabase_realtime add table public.%I', t);
     exception when duplicate_object then null;
@@ -603,3 +667,38 @@ insert into public.products (id, name, brand, description, sell_price, photo, so
 ('p_erawadee_09', 'Erawadee Pla Lai Phueak', 'ERAWADEE', 'Mengembalikan kebugaran badan, mencegah ED, memperbaiki kualitas sperma. · 100 cap', 1250000, 'https://raw.githubusercontent.com/ferryswasonoai-eng/kuytitipibumami/main/images/erawadee/erawadee_09.jpg', 9, 'Rp 1.250.000 (100 cap)'),
 ('p_erawadee_10', 'Erawadee No.100 Tang Tang Hae Chao', 'ERAWADEE', 'Formula botani untuk dukungan harian energi, stamina & kepercayaan diri. · 10 cap', 850000, 'https://raw.githubusercontent.com/ferryswasonoai-eng/kuytitipibumami/main/images/erawadee/erawadee_10.jpg', 10, 'Rp 850.000 (10 cap)')
 on conflict (id) do nothing;
+
+-- ---------------------------------------------------------------------
+-- 10. EVENT & KATEGORI AWAL (bisa diubah dari aplikasi: Saya → Event jastip)
+-- ---------------------------------------------------------------------
+insert into public.events (id, code, name, title, country, flag, currency, fee_type, fee_value, ship_per_kg, rounding, po_start, po_end, eta, tagline, color, status, sort)
+values
+  ('ev_bkk', 'BKK', 'Bangkok', 'OPEN PO', 'Thailand', '🇹🇭', 'THB', 'percent', 10, 0, 1000, null, null, '', 'Titip barang ori, langsung dari tokonya', '#ee4a3e', 'open', 1),
+  ('ev_aus', 'AUS', 'Australia', 'OPEN JASTIP', 'Australia', '🇦🇺', 'AUD', 'percent', 15, 0, 1000, null, null, '', 'Produk original langsung dari toko-nya', '#1d3a8a', 'draft', 2),
+  ('ev_jpn', 'JPN', 'Jepang', 'OPEN JASTIP', 'Jepang', '🇯🇵', 'JPY', 'percent', 15, 0, 1000, '2026-11-10', '2026-11-18', '', 'Sepatu, Donki haul, skincare & fashion Jepang', '#c8102e', 'draft', 3)
+on conflict (id) do nothing;
+
+update public.settings set data = data || jsonb_build_object('categories', jsonb_build_array(
+  jsonb_build_object('name', 'Skincare', 'icon', '🧴'),
+  jsonb_build_object('name', 'Vitamin & Suplemen', 'icon', '💊'),
+  jsonb_build_object('name', 'Herbal & Wellness', 'icon', '🌿'),
+  jsonb_build_object('name', 'Parfum', 'icon', '🌸'),
+  jsonb_build_object('name', 'Fashion', 'icon', '👕'),
+  jsonb_build_object('name', 'Tas & Aksesori', 'icon', '👜'),
+  jsonb_build_object('name', 'Sepatu', 'icon', '👟'),
+  jsonb_build_object('name', 'Makanan & Snack', 'icon', '🍫'),
+  jsonb_build_object('name', 'Tumbler & Lifestyle', 'icon', '🥤'),
+  jsonb_build_object('name', 'Anak & Bayi', 'icon', '🧸')))
+where id = 'main' and not (data ? 'categories');
+
+-- Produk katalog lama → event Bangkok + kategori sesuai brand
+update public.products set events = array['ev_bkk'] where id like 'p\_%' escape '\' and cardinality(events) = 0
+  and upper(brand) in ('TOFU', 'BUTTERFLY', 'GENTLEWOMAN', 'ERAWADEE');
+update public.products set category = case upper(brand)
+    when 'TOFU' then 'Skincare' when 'BUTTERFLY' then 'Parfum'
+    when 'GENTLEWOMAN' then 'Tas & Aksesori' when 'ERAWADEE' then 'Herbal & Wellness' else category end
+  where category = '';
+
+-- Pesanan lama tanpa event → dicocokkan dari nama trip
+update public.orders o set event_id = e.id from public.events e
+  where o.event_id is null and o.trip <> '' and lower(o.trip) like '%' || lower(e.name) || '%';

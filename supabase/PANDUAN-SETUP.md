@@ -1,4 +1,4 @@
-# Panduan setup KuyTitip v2 (Supabase)
+# Panduan setup KuyTitip v4 (Supabase, multi-event)
 
 Cukup dilakukan **sekali** oleh owner, kira-kira 10 menit.
 
@@ -8,8 +8,12 @@ Cukup dilakukan **sekali** oleh owner, kira-kira 10 menit.
 2. Di menu kiri pilih **SQL Editor**, lalu **New query**.
 3. Buka file [`schema.sql`](schema.sql), salin **seluruh isinya**, tempel ke editor, lalu klik **Run**.
    Hasilnya harus "Success. No rows returned". File ini aman dijalankan ulang.
-4. Hasilnya: tabel, aturan keamanan, fungsi web, bucket foto, dan **71 produk dari katalog lama**
-   (TOFU, Butterfly, GentleWoman, Erawadee) siap dipakai.
+4. Hasilnya: tabel, aturan keamanan, fungsi web, bucket foto, **71 produk dari katalog lama**
+   (TOFU, Butterfly, GentleWoman, Erawadee) beserta kategorinya, dan **3 event awal**:
+   Bangkok (PO dibuka), Australia dan Jepang (draft).
+
+> **Sudah pernah menjalankan versi lama?** Jalankan ulang `schema.sql` versi terbaru. Data lama tetap aman:
+> kolom baru ditambahkan, dan pesanan lama otomatis dihubungkan ke event yang namanya cocok dengan trip-nya.
 
 ## 2. Matikan konfirmasi email (disarankan)
 
@@ -45,6 +49,22 @@ apa pun sampai owner memberinya peran.
 
 > Kalau web di-host di tempat lain (misalnya Render), ganti alamatnya di aplikasi:
 > **Saya → Profil usaha & PO → Link web buyer**.
+
+## 6. Atur event jastip (Bangkok, Australia, kota lain)
+
+Buka **Saya → Event jastip → Kelola** (hanya owner). Setiap event punya pengaturan sendiri:
+
+| Bagian | Isi |
+| --- | --- |
+| Identitas | Nama kota, kode singkat (BKK, AUS, JPN — dipakai di kode pesanan & link), label (OPEN PO / OPEN JASTIP), bendera, warna tema, tagline, foto banner |
+| Periode & status | Tanggal buka–tutup PO, estimasi tiba, info PO. Status: **Draft** (tersembunyi), **PO dibuka**, **PO ditutup** (tampil, tidak bisa order), **Selesai** |
+| Harga & markup | Mata uang belanja, kurs dikunci (opsional), fee persen/flat, ongkir per kg, pembulatan |
+
+- **Produk** bisa dipasang ke satu atau beberapa event (Produk → ubah → *Tampil di event*). Produk tanpa event tampil di semua event.
+- **Kategori** (Skincare, Vitamin, Sepatu, dst.) diatur di **Saya → Kategori produk**: satu baris satu kategori, emoji lalu nama.
+- Di web, buyer memilih event lewat tab di atas. Keranjang terpisah per event. Link langsung ke satu event: `.../toko/?e=bkk`.
+- Di aplikasi, chip bendera di kanan atas menunjukkan **event aktif** (ketuk untuk ganti). Pesanan, daftar belanja, dan kalkulator bisa difilter per event.
+- Foto banner: pakai foto milik sendiri atau yang boleh dipakai. Tanpa foto, web memakai warna tema dan bendera.
 
 ## Cara kerja sehari-hari
 

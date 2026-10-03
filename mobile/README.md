@@ -1,6 +1,7 @@
 # KuyTitip — Aplikasi Jastip Android (internal)
 
-> **Versi 2:** data tersimpan online di Supabase dan bisa dipakai 3 admin sekaligus (login, peran,
+> **Versi 4:** multi-event (Bangkok, Australia, Jepang, kota lain) — masing-masing punya mata uang, kurs, fee, ongkir, periode PO, kategori & tampilan sendiri.
+> **Sejak versi 2:** data tersimpan online di Supabase dan bisa dipakai 3 admin sekaligus (login, peran,
 > realtime, tetap bisa offline). Web katalog + lacak pesanan untuk buyer ada di folder [`toko/`](../toko).
 > Langkah setup: [`supabase/PANDUAN-SETUP.md`](../supabase/PANDUAN-SETUP.md).
 
@@ -15,7 +16,8 @@ HTML/JS biasa (folder `www/`) lalu dibungkus menjadi APK Android memakai Capacit
 | **Pesanan** | Catat titipan per customer: banyak barang, qty, berat, harga beli (mata uang apa saja), harga jual, tombol *Hitung harga jual (cepat)* & rincian perhitungan, foto barang, foto struk, ongkir, diskon, DP/lunas, status (Baru → Sudah dibeli → Dikirim → Selesai), kirim nota ke WhatsApp |
 | **Produk** | Katalog barang yang sering dititip (foto, harga, berat) — tinggal pilih saat membuat pesanan |
 | **Customer** | Daftar pelanggan, nomor WA, alamat, riwayat & sisa tagihan, chat WA |
-| **Saya** | Nama usaha, trip aktif, template nota WA, backup/restore (.json), ekspor rekap (.csv) |
+| **Event** (Saya → Event jastip) | Buat/ubah event: kode, bendera, warna, banner, periode PO, status, mata uang, kurs kunci, fee, ongkir/kg, pembulatan; bagikan link katalog per event |
+| **Saya** | Nama usaha, event aktif, kategori produk, template nota WA, backup/restore (.json), ekspor rekap (.csv) |
 
 Kurs diambil dari open.er-api.com (cadangan: Frankfurter/ECB), disimpan di HP sehingga
 tetap bisa dipakai saat offline. Data utama tersimpan di Supabase; HP menyimpan salinan untuk dipakai offline.

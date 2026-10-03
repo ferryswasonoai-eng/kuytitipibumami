@@ -3,21 +3,23 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#fbf5f3" />
+  <meta name="theme-color" content="#ffffff" />
   <title>Lacak Pesanan</title>
   <link rel="icon" href="icon.png" />
   <link rel="stylesheet" href="toko.css" />
 </head>
-<body>
-  <header class="top">
-    <div class="brand">
-      <span class="brand-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 7h12l-1 13H7L6 7z"/><path d="M9 7a3 3 0 0 1 6 0"/><path d="M10 12a2 2 0 0 0 4 0"/></svg></span>
-      <span class="brand-name" id="biz">Lacak pesanan</span>
+<body style="padding-bottom:20px">
+  <header class="nav">
+    <div class="nav-in">
+      <a class="logo" href="./" aria-label="Katalog">
+        <span class="logo-bag" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 7h12l-1 13H7L6 7z"/><path d="M9 7a3 3 0 0 1 6 0"/><path d="M10 12a2 2 0 0 0 4 0"/></svg></span>
+        <span class="logo-txt"><b id="biz">Lacak pesanan</b><small>ORI · LANGSUNG DARI TOKONYA</small></span>
+      </a>
+      <a class="btn-wa" href="./" style="background:var(--red);padding:10px 14px">Katalog</a>
     </div>
-    <a class="chat" href="./">Katalog</a>
   </header>
   <main class="wrap" style="max-width:640px" id="main">
-    <div class="skel" style="aspect-ratio:auto;height:220px"></div>
+    <div class="hero-skel" style="border-radius:22px;height:220px"></div>
   </main>
 
   <script src="vendor/supabase.js"></script>
@@ -35,17 +37,13 @@
     const main = $('#main');
     const p = new URLSearchParams(location.search);
     const code = p.get('k'); const token = p.get('t');
-    if (!code || !token) {
-      main.innerHTML = `<div class="panel"><h2>Link tidak lengkap</h2><p>Buka link lacak dari nota WhatsApp yang dikirim admin.</p></div>`;
-      return;
-    }
+    if (!code || !token) { main.innerHTML = `<div class="panel"><h2>Link tidak lengkap</h2><p>Buka link lacak dari nota WhatsApp yang dikirim admin.</p></div>`; return; }
     const supa = window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseKey, { auth: { persistSession: false, autoRefreshToken: false } });
     async function load() {
       const { data: o, error } = await supa.rpc('track_order', { p_code: code, p_token: token });
-      if (error || !o) {
-        main.innerHTML = `<div class="panel"><h2>Pesanan tidak ditemukan</h2><p>Periksa kembali link dari nota WhatsApp.${error ? `<br><small>${esc(error.message)}</small>` : ''}</p></div>`;
-        return;
-      }
+      if (error || !o) { main.innerHTML = `<div class="panel"><h2>Pesanan tidak ditemukan</h2><p>Periksa kembali link dari nota WhatsApp.${error ? `<br><small>${esc(error.message)}</small>` : ''}</p></div>`; return; }
+      const ev = o.event || {};
+      if (ev.color) document.documentElement.style.setProperty('--ev', ev.color);
       document.title = `Pesanan ${o.code} · ${o.business || 'Jastip'}`;
       $('#biz').textContent = o.business || 'Lacak pesanan';
       const idx = STEPS.findIndex((s) => s[0] === o.status);
@@ -53,20 +51,20 @@
       const photos = [...(o.receipts || []), ...(o.items || []).flatMap((i) => i.photos || [])];
       const wa = String(o.wa || '').replace(/\D/g, '');
       main.innerHTML = `
-        <section class="hero"><p class="eyebrow">Pesanan #${esc(o.code)}${o.trip ? ' · ' + esc(o.trip) : ''}</p>
+        <section class="mini-hero"><small>${esc(ev.title || 'JASTIP')} ${esc(ev.name || o.trip || '')}</small>
           <h1>${o.customer ? `Halo, ${esc(o.customer)}!` : 'Status pesanan'}</h1>
-          <p>Dipesan ${fmtDate(o.created_at)} · diperbarui ${fmtDate(o.updated_at)}</p></section>
+          <div>Pesanan <b>#${esc(o.code)}</b>${ev.eta ? ` · estimasi tiba ${esc(ev.eta)}` : ''}</div>
+          <div style="opacity:.85;font-size:.85rem;margin-top:4px">Dipesan ${fmtDate(o.created_at)} · diperbarui ${fmtDate(o.updated_at)}</div>
+          <span class="fl">${esc(ev.flag || '🛍️')}</span></section>
         <section class="panel"><h2>Status</h2>
           ${o.status === 'batal' ? '<p><span class="badge b-bad">Pesanan dibatalkan</span></p><p class="note">Hubungi admin bila ada pertanyaan.</p>' :
-          `<ol class="steps">${STEPS.map((s, i) => `<li class="${i < idx ? 'done' : i === idx ? 'now' : ''}">${esc(s[1])}<div class="note" style="margin:2px 0 0">${esc(s[2])}</div></li>`).join('')}</ol>`}
+          `<ol class="tl">${STEPS.map((s, i) => `<li class="${i < idx ? 'done' : i === idx ? 'now' : ''}">${esc(s[1])}<small>${esc(s[2])}</small></li>`).join('')}</ol>`}
         </section>
         <section class="panel"><h2>Barang</h2>
-          ${(o.items || []).map((it) => {
-            const ph = (it.photos && it.photos[0]) || it.productPhoto;
+          ${(o.items || []).map((it) => { const ph = (it.photos && it.photos[0]) || it.productPhoto;
             return `<div class="line-item">${ph ? `<img src="${esc(photoUrl(ph))}" alt="" data-zoom="${esc(photoUrl(ph))}" style="cursor:zoom-in">` : '<div class="noimg">📦</div>'}
               <div style="flex:1;min-width:0"><div class="nm">${esc(it.name)}</div><div class="sub">${it.qty} × ${fmtIDR(it.price)}${it.bought ? ' · <span class="badge b-ok">sudah dibeli</span>' : ''}</div></div>
-              <b>${fmtIDR(Number(it.price) * Number(it.qty))}</b></div>`;
-          }).join('')}
+              <b>${fmtIDR(Number(it.price) * Number(it.qty))}</b></div>`; }).join('')}
           <div style="margin-top:10px">
             <div class="row"><span>Subtotal</span><b>${fmtIDR(o.subtotal)}</b></div>
             <div class="row"><span>Ongkir</span><b>${Number(o.shipping) ? fmtIDR(o.shipping) : (o.status === 'menunggu' ? 'dikonfirmasi admin' : fmtIDR(0))}</b></div>
@@ -79,7 +77,7 @@
         ${photos.length ? `<section class="panel"><h2>Foto belanja</h2><p class="note" style="margin:-6px 0 12px">Bukti barang & struk dari toko.</p>
           <div class="photos">${photos.map((ph) => `<img src="${esc(photoUrl(ph))}" alt="" data-zoom="${esc(photoUrl(ph))}">`).join('')}</div></section>` : ''}
         ${wa ? `<a class="btn wa" target="_blank" rel="noopener" href="https://wa.me/${wa}?text=${encodeURIComponent(`Halo admin, saya mau tanya pesanan #${o.code} 🙏`)}">Tanya admin via WhatsApp</a>` : ''}
-        <p class="foot">Halaman ini diperbarui otomatis.</p>`;
+        <p class="note" style="text-align:center">Halaman ini diperbarui otomatis.</p>`;
     }
     document.addEventListener('click', (e) => {
       const z = e.target.closest('[data-zoom]');
