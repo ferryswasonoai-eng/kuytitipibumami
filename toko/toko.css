@@ -154,3 +154,42 @@ dialog.sheet::backdrop { background: rgba(40, 10, 30, .5); }
 .b-warn { background: var(--warn-soft); color: var(--warn); }
 .b-bad { background: #fde2e0; color: #b3261e; }
 .cartbar[hidden] { display: none; }
+
+/* ================= v3 theme: clean, coral red ================= */
+:root {
+  --bg: #f4f5f7; --bg-2: #f1f2f5; --card: #ffffff; --ink: #1d2230; --ink-2: #6b7180; --muted: #9aa0ab;
+  --line: #eceef2; --line-2: #e1e4ea; --accent: #ee4a3e; --accent-2: #ff6a5c; --accent-soft: #fde9e7;
+  --ok: #1f9d6b; --ok-soft: #e1f5ec; --warn: #b8650a; --warn-soft: #fdf0dc;
+  --serif: "Plus Jakarta Sans", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --sans: "Plus Jakarta Sans", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14161b; --bg-2: #1c1f26; --card: #1b1e25; --ink: #eef0f4; --ink-2: #a9afbb; --muted: #7d8492;
+    --line: #2a2e37; --line-2: #343945; --accent: #ff6a5c; --accent-2: #ff8478; --accent-soft: #3a1f1d;
+    --ok: #4cc690; --ok-soft: #173326; --warn: #f0a849; --warn-soft: #36280f;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14161b; --bg-2: #1c1f26; --card: #1b1e25; --ink: #eef0f4; --ink-2: #a9afbb; --muted: #7d8492;
+  --line: #2a2e37; --line-2: #343945; --accent: #ff6a5c; --accent-2: #ff8478; --accent-soft: #3a1f1d;
+  --ok: #4cc690; --ok-soft: #173326; --warn: #f0a849; --warn-soft: #36280f;
+}
+h1, h2, h3, .brand-name, .card .pr, .sum b, .row.total b, .cartbar b { font-family: var(--sans); font-weight: 800; letter-spacing: -0.02em; }
+.brand-icon, .add, .btn.primary, .cartbar button { background: var(--accent); }
+.eyebrow { color: var(--accent); }
+.hero h1 { font-size: clamp(1.6rem, 5vw, 2.3rem); }
+.po { border-radius: 16px; }
+.po.open { background: var(--accent); color: #fff; box-shadow: 0 16px 30px -22px rgba(238,74,62,.95); }
+.card { border-radius: 18px; box-shadow: 0 1px 2px rgba(16,24,40,.04), 0 10px 24px -20px rgba(16,24,40,.25); }
+.card .br { color: var(--ink-2); letter-spacing: .06em; }
+.card .pr { color: var(--ink); }
+.chip { border-radius: 10px; }
+.chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.input { border-radius: 12px; }
+.input:focus { border-color: var(--accent); box-shadow: 0 0 0 4px rgba(238,74,62,.12); }
+.cartbar { background: var(--card); color: var(--ink); border: 1px solid var(--line); box-shadow: 0 16px 34px -18px rgba(16,24,40,.45); }
+.cartbar .small { color: var(--ink-2); opacity: 1; }
+.panel { border-radius: 18px; box-shadow: 0 1px 2px rgba(16,24,40,.04); }
+.steps li.now::before { background: var(--accent); border-color: var(--accent); }
+.top { background: color-mix(in srgb, var(--card) 94%, transparent); }

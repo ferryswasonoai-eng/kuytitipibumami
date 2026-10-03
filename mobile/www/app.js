@@ -782,6 +782,57 @@ async function migrateV1() {
   await kvPut('migratedV2', true);
 }
 
+/* ================= Mini charts (SVG) ================= */
+const DONUT_STATUSES = [['menunggu', 'Menunggu', '#E5484D'], ['baru', 'Baru', '#3E63DD'], ['dibeli', 'Sudah dibeli', '#D97706'], ['dikirim', 'Dikirim', '#2B9A66'], ['selesai', 'Selesai', '#8E4EC6']];
+function ringSVG(pct, size = 104) {
+  const r = 42, c = 2 * Math.PI * r, v = Math.max(0, Math.min(100, pct));
+  return `<svg width="${size}" height="${size}" viewBox="0 0 100 100" role="img" aria-label="${v}% terbayar">
+    <circle cx="50" cy="50" r="${r}" fill="none" stroke="var(--accent-soft)" stroke-width="10"/>
+    <circle cx="50" cy="50" r="${r}" fill="none" stroke="var(--accent)" stroke-width="10" stroke-linecap="round"
+      stroke-dasharray="${(c * v / 100).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 50 50)"/></svg>`;
+}
+function donutSVG(counts, size = 120) {
+  const total = counts.reduce((a, b) => a + b, 0) || 1;
+  const r = 40, c = 2 * Math.PI * r; let off = 0;
+  const gap = counts.filter((x) => x > 0).length > 1 ? 1.6 : 0;
+  const segs = counts.map((n, i) => {
+    if (!n) return '';
+    const len = c * n / total;
+    const seg = `<circle cx="50" cy="50" r="${r}" fill="none" stroke="${DONUT_STATUSES[i][2]}" stroke-width="16"
+      stroke-dasharray="${Math.max(0.1, len - gap).toFixed(2)} ${c.toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}" transform="rotate(-90 50 50)"><title>${DONUT_STATUSES[i][1]}: ${n}</title></circle>`;
+    off += len; return seg;
+  }).join('');
+  return `<svg width="${size}" height="${size}" viewBox="0 0 100 100" role="img" aria-label="Komposisi status pesanan">${segs}
+    <text x="50" y="49" text-anchor="middle" font-size="16" font-weight="800" fill="var(--ink)">${counts.reduce((a, b) => a + b, 0)}</text>
+    <text x="50" y="62" text-anchor="middle" font-size="7.5" fill="var(--ink-2)">pesanan</text></svg>`;
+}
+function lineSVG(labels, values) {
+  const W = 320, H = 140, pl = 26, pr = 10, pt = 14, pb = 24;
+  const max = Math.max(1, ...values); const step = (W - pl - pr) / Math.max(1, values.length - 1);
+  const x = (i) => pl + i * step; const y = (v) => pt + (H - pt - pb) * (1 - v / max);
+  const pts = values.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+  const ticks = [0, Math.ceil(max / 2), max].filter((v, i, a) => a.indexOf(v) === i);
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Jumlah pesanan per hari">
+    <defs><linearGradient id="ga" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--accent)" stop-opacity=".22"/><stop offset="1" stop-color="var(--accent)" stop-opacity="0"/></linearGradient></defs>
+    ${ticks.map((t) => `<line x1="${pl}" x2="${W - pr}" y1="${y(t)}" y2="${y(t)}" stroke="var(--line)" stroke-width="1"/><text x="${pl - 6}" y="${y(t) + 3}" text-anchor="end" font-size="9" fill="var(--muted)">${t}</text>`).join('')}
+    <polygon points="${x(0)},${y(0)} ${pts} ${x(values.length - 1)},${y(0)}" fill="url(#ga)"/>
+    <polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+    ${values.map((v, i) => `<circle cx="${x(i)}" cy="${y(v)}" r="4" fill="#fff" stroke="var(--accent)" stroke-width="2"/>`).join('')}
+    ${labels.map((l, i) => `<text x="${x(i)}" y="${H - 6}" text-anchor="middle" font-size="9" fill="var(--muted)">${l}</text>`).join('')}
+    ${values.map((v, i) => `<rect data-tip="${labels[i]}: ${v} pesanan" data-x="${x(i)}" data-y="${y(v)}" x="${x(i) - step / 2}" y="0" width="${step}" height="${H}" fill="transparent"/>`).join('')}
+  </svg>`;
+}
+function bindTip(box) {
+  if (!box) return;
+  const tip = $('.chart-tip', box); const svg = $('svg', box);
+  const show = (t) => {
+    const r = svg.getBoundingClientRect(); const k = r.width / 320;
+    tip.textContent = t.dataset.tip; tip.style.left = (num(t.dataset.x) * k) + 'px'; tip.style.top = (num(t.dataset.y) * k) + 'px'; tip.style.opacity = 1;
+  };
+  $$('[data-tip]', box).forEach((t) => { t.addEventListener('mouseenter', () => show(t)); t.addEventListener('touchstart', () => show(t), { passive: true }); });
+  box.addEventListener('mouseleave', () => { tip.style.opacity = 0; });
+}
+
 /* ================= Views: Beranda + Kalkulator ================= */
 async function viewHome() {
   setTab('beranda');
@@ -797,20 +848,68 @@ async function viewHome() {
   const srcBy = {};
   scope.forEach((o) => { srcBy[o.source || 'admin'] = (srcBy[o.source || 'admin'] || 0) + 1; });
 
+  // --- data dashboard ---
+  const liveScope = scope.filter((o) => o.status !== 'selesai');
+  let qtyAll = 0, qtyBought = 0;
+  scope.forEach((o) => (o.items || []).forEach((i) => { qtyAll += num(i.qty); if (i.bought || ['dikirim', 'selesai'].includes(o.status)) qtyBought += num(i.qty); }));
+  const pct = qtyAll ? Math.round(qtyBought / qtyAll * 100) : 0;
+  const paidAll = scope.reduce((a, o) => a + Math.min(num(pm[o.id]), orderTotals(o).total), 0);
+  const payPct = omzet ? Math.round(paidAll / omzet * 100) : 0;
+  const days = [...Array(7)].map((_, i) => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - 6 + i); return d; });
+  const perDay = days.map((d) => orders.filter((o) => o.status !== 'batal' && (!tripSel || o.trip === tripSel) && o.createdAt >= d.getTime() && o.createdAt < d.getTime() + 864e5).length);
+  const stCount = DONUT_STATUSES.map(([k]) => orders.filter((o) => o.status === k && (!tripSel || o.trip === tripSel)).length);
+  const stTotal = stCount.reduce((a, b) => a + b, 0);
+  const recent = orders.filter((o) => !tripSel || o.trip === tripSel).sort((a, b) => b.createdAt - a.createdAt).slice(0, 4);
+  const cmap = Object.fromEntries((await DB.all('customers')).map((x) => [x.id, x]));
+
   view.innerHTML = `
-    <p class="eyebrow">Ringkasan</p>
+    <p class="eyebrow">Dashboard</p>
     <h1 class="page-title">Halo, ${esc(ME.name || 'Admin')} 👋</h1>
     <p class="page-sub">${esc(roleLabel(ME.role))}${S.trip ? ` · Trip aktif: <b>${esc(S.trip)}</b>` : ''} · PO ${S.poOpen ? 'dibuka' : 'ditutup'}</p>
     ${waiting && !isShopper() ? `<a class="alert warn" href="#/pesanan?f=masuk">🔔 ${waiting} pesanan web menunggu konfirmasi →</a>` : ''}
-    ${toBuy ? `<a class="alert info" href="#/belanja">🛒 ${toBuy} barang belum dibeli — buka daftar belanja →</a>` : ''}
     ${trips.length ? `<div class="chips">${['', ...trips].map((t) => `<button class="chip ${t === tripSel ? 'on' : ''}" data-trip="${esc(t)}">${t ? esc(t) : 'Semua trip'}</button>`).join('')}</div>` : ''}
-    <div class="stats">
-      <div class="stat accent"><div class="label">Pesanan aktif</div><div class="value">${aktif}</div></div>
-      ${isShopper() ? `<div class="stat"><div class="label">Barang belum dibeli</div><div class="value">${toBuy}</div></div>` : `<div class="stat"><div class="label">Omzet</div><div class="value">${fmtIDR(omzet)}</div></div>
-      <div class="stat"><div class="label">Estimasi profit</div><div class="value">${fmtIDR(profit)}</div></div>
-      <div class="stat"><div class="label">Belum dibayar</div><div class="value">${fmtIDR(due)}</div></div>`}
-    </div>
-    ${scope.length && !isShopper() ? `<p class="muted small" style="margin:-6px 0 18px">Sumber pesanan: ${Object.entries(srcBy).map(([k, v]) => `${SOURCES[k] || k} ${v}`).join(' · ')}</p>` : ''}
+
+    <section class="hero-red">
+      <div class="lbl">Progres belanja${tripSel ? ' · ' + esc(tripSel) : ''}</div>
+      <div class="big">${pct}<small>%</small></div>
+      <div class="bar"><i style="width:${pct}%"></i></div>
+      <div class="mini">
+        <div><b>${aktif}</b><span>Pesanan aktif</span></div>
+        <div><b>${waiting}</b><span>Menunggu</span></div>
+        <a href="#/belanja" style="color:inherit;text-decoration:none"><div><b>${toBuy}</b><span>Belum dibeli ›</span></div></a>
+      </div>
+    </section>
+
+    ${isShopper() ? '' : `<div class="dash-grid">
+      <section class="card"><div class="card-head"><h2>Omzet</h2></div>
+        <div class="stat-value" style="font-size:clamp(1rem,4.6vw,1.25rem);font-weight:800;white-space:nowrap">${fmtIDR(omzet)}</div>
+        <div class="muted small" style="margin-top:6px">Profit ≈ <b style="color:var(--ok)">${fmtIDR(profit)}</b></div>
+        <div class="muted small" style="margin-top:2px">Belum dibayar <b style="color:var(--accent)">${fmtIDR(due)}</b></div></section>
+      <section class="card"><div class="card-head"><h2>Pembayaran</h2></div>
+        <div class="ring-wrap">${ringSVG(payPct)}<div class="ring-val">${payPct}%<small>terbayar</small></div></div></section>
+    </div>`}
+
+    <section class="card">
+      <div class="card-head"><h2>Tren pesanan</h2><span class="muted small">7 hari terakhir</span></div>
+      <div class="chart-box" id="trend">${lineSVG(days.map((d) => d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })), perDay)}<div class="chart-tip"></div></div>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>Status pesanan</h2><a href="#/pesanan?f=semua">Lihat semua</a></div>
+      ${stTotal ? `<div class="donut-row"><div id="donut">${donutSVG(stCount)}</div>
+        <div class="legend">${DONUT_STATUSES.map(([k, l, c], i) => `<div><i style="background:${c}"></i><span>${l}</span><b>${stCount[i]}</b><span class="small" style="flex:0 0 38px;text-align:right">${Math.round(stCount[i] / stTotal * 100)}%</span></div>`).join('')}</div></div>`
+      : '<p class="muted">Belum ada pesanan.</p>'}
+    </section>
+
+    ${recent.length ? `<section class="card recent">
+      <div class="card-head"><h2>Pesanan terbaru</h2><a href="#/pesanan">Lihat semua</a></div>
+      ${recent.map((o) => { const cu = cmap[o.customerId]; return `<a class="list-item" href="#/pesanan/${o.id}">
+        <div class="avatar">${esc((cu?.name || '?').slice(0, 1).toUpperCase())}</div>
+        <div style="flex:1;min-width:0"><div class="title">${esc(cu?.name || 'Tanpa customer')}</div>
+          <div class="sub">#${esc(o.code)} · ${statusLabel(o.status)} · ${fmtAgo(o.createdAt)}</div></div>
+        ${o.status === 'menunggu' ? '<span class="dot-new" title="Baru masuk"></span>' : ''}
+        ${isShopper() ? '' : `<div class="amount small">${fmtIDR(orderTotals(o, pm[o.id]).total)}</div>`}</a>`; }).join('')}
+    </section>` : ''}
 
     <p class="eyebrow">Alat bantu</p>
     <h1 class="page-title">Kalkulator jastip</h1>
@@ -912,6 +1011,7 @@ async function viewHome() {
     if (!r || !num(el('cBuy').value)) return toast('Isi harga beli dulu');
     shareText('Harga jastip', `Harga ${c.cur} ${el('cBuy').value} → harga jastip ${fmtIDR(r.sell)} (kurs ${fmtRate(num(el('cRate').value))})`);
   };
+  bindTip($('#trend'));
   $$('[data-trip]').forEach((b) => b.onclick = () => { viewHome.trip = b.dataset.trip; viewHome(); });
   if (!rateOf(c.cur) || (!lockedRate(c.cur) && L.rates[c.cur] && Date.now() - L.rates[c.cur].at > 6 * 3600e3)) refresh(false);
 }
