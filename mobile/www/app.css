@@ -20,7 +20,7 @@
   --radius: 22px;
   --radius-sm: 16px;
   --serif: "Noto Serif", Georgia, "Times New Roman", serif;
-  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif;
+  --sans: system-ui, -apple-system, "Segoe UI", "Noto Sans", sans-serif;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
@@ -288,8 +288,8 @@ a.alert { display: block; text-decoration: none; font-weight: 600; }
   --ok: #1f9d6b; --ok-soft: #e1f5ec; --warn: #b8650a; --warn-soft: #fdf0dc;
   --info: #3e63dd; --info-soft: #e7ecfc; --danger: #d92d20;
   --radius: 20px; --radius-sm: 14px;
-  --serif: "Plus Jakarta Sans", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --sans: "Plus Jakarta Sans", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --serif: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 body { background: var(--bg); }
 h1, h2, h3, .brand-name, .page-title, .stat .value, .result .total b { font-family: var(--sans); font-weight: 800; letter-spacing: -0.02em; }
@@ -360,14 +360,14 @@ a.alert { border: 1px solid transparent; }
 .recent .list-item:last-child { border-bottom: 0; }
 .dot-new { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
 
-/* ================= Font: Roboto Regular 400 (lokal, tetap jalan offline) ================= */
-@font-face { font-family: "Roboto"; font-style: normal; font-weight: 400; font-display: swap;
-  src: url("fonts/roboto-latin-400-normal.woff2") format("woff2");
+/* ================= Font: Inter Regular 400 (lokal, tetap jalan offline) ================= */
+@font-face { font-family: "Inter"; font-style: normal; font-weight: 400; font-display: swap;
+  src: url("fonts/inter-latin-400-normal.woff2") format("woff2");
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
-@font-face { font-family: "Roboto"; font-style: normal; font-weight: 400; font-display: swap;
-  src: url("fonts/roboto-latin-ext-400-normal.woff2") format("woff2");
+@font-face { font-family: "Inter"; font-style: normal; font-weight: 400; font-display: swap;
+  src: url("fonts/inter-latin-ext-400-normal.woff2") format("woff2");
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
-:root { --sans: "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif; --serif: var(--sans); }
+:root { --sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif; --serif: var(--sans); }
 html, body, button, input, select, textarea { font-family: var(--sans); }
 *, *::before, *::after, h1, h2, h3, b, strong, th, label, .btn, .chip, .badge, .title, .amount { font-weight: 400 !important; font-synthesis: none; letter-spacing: 0; }
 svg text { font-family: var(--sans); font-weight: 400 !important; }
