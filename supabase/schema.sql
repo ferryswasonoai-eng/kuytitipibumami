@@ -675,7 +675,8 @@ insert into public.events (id, code, name, title, country, flag, currency, fee_t
 values
   ('ev_bkk', 'BKK', 'Bangkok', 'OPEN PO', 'Thailand', '🇹🇭', 'THB', 'percent', 10, 0, 1000, null, null, '', 'Titip barang ori, langsung dari tokonya', '#ee4a3e', 'open', 1),
   ('ev_aus', 'AUS', 'Australia', 'OPEN JASTIP', 'Australia', '🇦🇺', 'AUD', 'percent', 15, 0, 1000, null, null, '', 'Produk original langsung dari toko-nya', '#1d3a8a', 'draft', 2),
-  ('ev_jpn', 'JPN', 'Jepang', 'OPEN JASTIP', 'Jepang', '🇯🇵', 'JPY', 'percent', 15, 0, 1000, '2026-11-10', '2026-11-18', '', 'Sepatu, Donki haul, skincare & fashion Jepang', '#c8102e', 'draft', 3)
+  ('ev_jpn', 'JPN', 'Jepang', 'OPEN JASTIP', 'Jepang', '🇯🇵', 'JPY', 'percent', 15, 0, 1000, '2026-11-10', '2026-11-18', '', 'Sepatu, Donki haul, skincare & fashion Jepang', '#c8102e', 'draft', 3),
+  ('ev_jpo', 'JPO', 'Jakarta Premium Outlet', 'OPEN JASTIP', 'Indonesia', '🇮🇩', 'IDR', 'flat', 25000, 0, 1000, null, null, '', 'Brand outlet ori harga diskon, langsung dari outletnya', '#0f766e', 'draft', 4)
 on conflict (id) do nothing;
 
 update public.settings set data = data || jsonb_build_object('categories', jsonb_build_array(

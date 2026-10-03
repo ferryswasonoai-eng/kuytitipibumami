@@ -412,3 +412,4 @@ button.rate-chip { min-width: 0; overflow: hidden; text-overflow: ellipsis; whit
 .two > * { min-width: 0; }
 .input { min-width: 0; max-width: 100%; }
 input[type=date].input { -webkit-appearance: none; appearance: none; width: 100%; padding-right: 8px; font-size: .95rem; }
+.ev-hero h1.long { font-size: clamp(1.6rem, 8vw, 2.2rem); }

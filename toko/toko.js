@@ -98,7 +98,7 @@ function renderHero() {
   h.innerHTML = `${bg}<div class="hero-fade"></div>
     <div class="hero-in">
       <span class="pill">${esc(EV.title || 'OPEN JASTIP')}</span>
-      <h1>${esc(EV.name)}</h1>
+      <h1${EV.name.length > 12 ? " class=\"long\"" : ""}>${esc(EV.name)}</h1>
       ${dates ? `<div class="dates">${esc(dates)}</div>` : ''}
       <p class="tag">${esc(EV.tagline || INFO.tagline || 'Produk original langsung dari tokonya')}</p>
       ${EV.note ? `<p class="sub">${esc(EV.note)}</p>` : ''}

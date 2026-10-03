@@ -39,6 +39,8 @@ function formatMoneyLive(el) {
 function formatMoneyInputs(root = document) {
   $$('input[data-money]', root).forEach((el) => { el.value = fmtMoneyVal(el.value, +(el.dataset.dec || 0)); });
 }
+// Format ulang angka setiap kali isi layar diganti (termasuk render ulang tanpa pindah halaman)
+new MutationObserver((muts) => { if (muts.some((m) => m.addedNodes.length)) formatMoneyInputs(view); }).observe(view, { childList: true });
 (() => {
   const desc = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
   Object.defineProperty(HTMLInputElement.prototype, 'value', {
@@ -941,7 +943,7 @@ function eventHero(ev, extra = '') {
   const bg = ev.banner ? `<div class="ev-hero-bg" style="background-image:url('${esc(photoUrl(ev.banner))}')"></div>` : `<div class="ev-hero-bg fb"></div><div class="ev-hero-flag">${esc(ev.flag || '✈️')}</div>`;
   return `<section class="ev-hero" style="--ev:${esc(ev.color || '#ef3b2d')}">${bg}<div class="ev-hero-fade"></div>
     <div class="ev-hero-in"><span class="ev-pill">${esc(ev.title || 'OPEN JASTIP')}</span>
-      <h1>${esc(ev.name)}</h1>
+      <h1${(ev.name || "").length > 12 ? " class=\"long\"" : ""}>${esc(ev.name)}</h1>
       <div class="ev-dates">${esc(fmtRangeD(ev.poStart, ev.poEnd) || 'Jadwal belum diisi')}</div>
       <div class="ev-meta"><span class="badge ${ev.status === 'open' ? 'pay-lunas' : ev.status === 'closed' ? 'st-dibeli' : 'st-batal'}">${esc(evStatusLabel(ev.status))}</span>
         <span>${esc(ev.currency)} · fee ${ev.feeType === 'flat' ? fmtIDR(ev.feeValue) : num(ev.feeValue) + '%'}</span></div>
@@ -972,7 +974,7 @@ async function viewHome() {
   const cmap = Object.fromEntries((await DB.all('customers')).map((x) => [x.id, x]));
   const cfgEv = ev || curEv();
   const cfg = evCfg(cfgEv);
-  const c = { cur: cfg.currency === 'IDR' ? 'THB' : cfg.currency, fee: { ...cfg.fee }, ship: cfg.shipPerKg, round: cfg.rounding };
+  const c = { cur: cfg.currency || 'IDR', fee: { ...cfg.fee }, ship: cfg.shipPerKg, round: cfg.rounding };
 
   view.innerHTML = `
     <p class="eyebrow">Dashboard</p>
@@ -1028,11 +1030,16 @@ async function viewHome() {
     <h1 class="page-title">Kalkulator jastip</h1>
     <p class="page-sub">${cfgEv ? `Memakai pengaturan event <b>${esc(evLabel(cfgEv))}</b>.` : 'Hitung kurs dan fee jastip per item.'}${isOwner() && cfgEv ? ' Simpan untuk mengubah markup bawaan event ini.' : ''}</p>
 
-    <section class="card">
+    <section class="card" id="cDomestic" hidden>
+      <h2>🇮🇩 Event dalam negeri</h2>
+      <p class="hint">Belanja dalam Rupiah — tidak perlu kurs. Isi diskon toko/outlet bila ada, ongkir per kg untuk kurir ke kota buyer.</p>
+      <button class="btn sm" type="button" id="cToForeign">Hitung dengan mata uang asing</button>
+    </section>
+    <section class="card" id="cKurs">
       <h2>Kurs</h2>
       <p class="hint">Kurs terkini diambil otomatis, bisa diganti manual.</p>
       <div class="field"><label>Mata uang belanja</label>
-        <select class="input" id="cCur">${curOptions(c.cur, true).replace('<option value="IDR"', '<option disabled value="IDR"')}</select></div>
+        <select class="input" id="cCur">${curOptions(c.cur, true)}</select></div>
       <div class="field"><label>Kurs ke IDR</label>
         <div class="row"><input class="input grow" id="cRate" data-money data-dec="4" inputmode="decimal" value="${rateOf(c.cur) || ''}" placeholder="mis. 487">
         <button class="btn sm" id="cRefresh" type="button">↻ Perbarui</button></div>
@@ -1058,6 +1065,7 @@ async function viewHome() {
         <div class="field"><label id="cBuyLbl">Harga beli</label><input class="input" id="cBuy" data-money data-dec="2" inputmode="decimal" placeholder="0"></div>
         <div class="field"><label>Berat (gram)</label><input class="input" id="cWeight" data-money inputmode="decimal" placeholder="0"></div>
       </div>
+      <div class="field"><label>Diskon toko / outlet (%) <span class="muted">— opsional</span></label><input class="input" id="cDisc" data-money data-dec="2" inputmode="decimal" placeholder="mis. 30"></div>
       <div class="result" id="cResult"></div>
       ${isOwner() && cfgEv ? `<div class="toggle-row" style="margin-top:12px;padding-bottom:4px"><span>Kunci kurs untuk event ${esc(cfgEv.name)}</span>
         <label class="switch"><input type="checkbox" id="cLock" ${num(cfgEv.lockedRate) ? 'checked' : ''}><span></span></label></div>` : ''}
@@ -1078,20 +1086,28 @@ async function viewHome() {
     const lk = lockedRate(c.cur, cfgEv);
     el('cRateInfo').textContent = lk ? `🔒 Dikunci owner: ${fmtIDR(lk)}${r ? ` · kurs pasar ${fmtRate(r.rate)} (${fmtAgo(r.at)})` : ''}`
       : r ? `Sumber: ${r.src} · diperbarui ${fmtAgo(r.at)}` : 'Belum ada kurs — tekan Perbarui (butuh internet) atau isi manual.';
-    el('cBuyLbl').textContent = `Harga beli (${c.cur})`;
+    el('cBuyLbl').textContent = c.cur === 'IDR' ? 'Harga label (Rp)' : `Harga beli (${c.cur})`;
+    const dom = c.cur === 'IDR';
+    el('cDomestic').hidden = !dom; el('cKurs').hidden = dom;
+    if (dom) el('cRate').value = 1;
+    if (el('cLock')) el('cLock').closest('.toggle-row').hidden = dom;
   };
   const recalc = () => {
     const rate = num(el('cRate').value);
     c.fee.value = num(el('cFee').value); c.ship = num(el('cShip').value); c.round = num(el('cRound').value);
-    const r = calcSell({ buy: el('cBuy').value, rate, weightG: el('cWeight').value, fee: c.fee, shipPerKg: c.ship, rounding: c.round });
+    const disc = Math.min(100, Math.max(0, num(el('cDisc').value)));
+    const buyNet = num(el('cBuy').value) * (1 - disc / 100);
+    const r = calcSell({ buy: buyNet, rate, weightG: el('cWeight').value, fee: c.fee, shipPerKg: c.ship, rounding: c.round });
     c.last = r;
     el('cResult').innerHTML = `
-      <div class="line"><span>Modal (${esc(c.cur)} → IDR)</span><b>${fmtIDR(r.modal)}</b></div>
+      ${disc ? `<div class="line"><span>Setelah diskon ${disc.toLocaleString('id-ID')}%</span><b>${fmtCur(buyNet, c.cur)}</b></div>` : ''}
+      <div class="line"><span>${c.cur === 'IDR' ? 'Modal' : `Modal (${esc(c.cur)} → IDR)`}</span><b>${fmtIDR(r.modal)}</b></div>
       <div class="line"><span>Fee jastip</span><b>${fmtIDR(r.fee)}</b></div>
       <div class="line"><span>Ongkir (berat)</span><b>${fmtIDR(r.ship)}</b></div>
       <div class="line total"><span>Harga jual</span><b>${fmtIDR(r.sell)}</b></div>`;
   };
   const refresh = async (force) => {
+    if (c.cur === 'IDR') { info(); recalc(); return; }
     el('cRateInfo').textContent = 'Mengambil kurs…';
     try {
       if (force) await fetchRate(c.cur); else await ensureRate(c.cur);
@@ -1102,7 +1118,7 @@ async function viewHome() {
   };
   setFeeType(c.fee.type); info(); recalc();
   $$('#cFeeType button').forEach((b) => b.onclick = () => { setFeeType(b.dataset.v); recalc(); });
-  ['cFee', 'cShip', 'cBuy', 'cWeight', 'cRate'].forEach((id) => el(id).oninput = recalc);
+  ['cFee', 'cShip', 'cBuy', 'cWeight', 'cRate', 'cDisc'].forEach((id) => el(id).oninput = recalc);
   el('cRound').onchange = recalc;
   el('cRate').onchange = async () => {
     const v = num(el('cRate').value);
@@ -1110,10 +1126,11 @@ async function viewHome() {
   };
   el('cCur').onchange = () => { c.cur = el('cCur').value; el('cRate').value = rateOf(c.cur) || ''; info(); recalc(); refresh(false); };
   el('cRefresh').onclick = () => refresh(true);
+  el('cToForeign').onclick = () => { el('cCur').value = 'THB'; el('cCur').onchange(); };
   if (el('cSave')) el('cSave').onclick = async () => {
     const e = { ...cfgEv };
     const v = num(el('cRate').value);
-    Object.assign(e, { currency: c.cur, feeType: c.fee.type, feeValue: c.fee.value, shipPerKg: c.ship, rounding: c.round, lockedRate: el('cLock').checked && v > 0 ? v : '' });
+    Object.assign(e, { currency: c.cur, feeType: c.fee.type, feeValue: c.fee.value, shipPerKg: c.ship, rounding: c.round, lockedRate: c.cur !== 'IDR' && el('cLock').checked && v > 0 ? v : '' });
     await saveRow('events', e); await loadEvents(); renderChrome(); info();
     toast(`Markup bawaan ${e.name} disimpan ✓`);
   };

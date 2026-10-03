@@ -270,3 +270,4 @@ textarea.input { min-height: 76px; resize: vertical; }
 }
 .mini-hero .fl { opacity: .3; font-size: 80px; right: 6px; bottom: -10px; }
 .mini-hero > *:not(.fl) { position: relative; z-index: 1; }
+.hero h1.long { font-size: clamp(2rem, 6.4vw, 3.9rem); max-width: 14ch; }

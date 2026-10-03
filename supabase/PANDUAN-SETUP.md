@@ -9,8 +9,8 @@ Cukup dilakukan **sekali** oleh owner, kira-kira 10 menit.
 3. Buka file [`schema.sql`](schema.sql), salin **seluruh isinya**, tempel ke editor, lalu klik **Run**.
    Hasilnya harus "Success. No rows returned". File ini aman dijalankan ulang.
 4. Hasilnya: tabel, aturan keamanan, fungsi web, bucket foto, **71 produk dari katalog lama**
-   (TOFU, Butterfly, GentleWoman, Erawadee) beserta kategorinya, dan **3 event awal**:
-   Bangkok (PO dibuka), Australia dan Jepang (draft).
+   (TOFU, Butterfly, GentleWoman, Erawadee) beserta kategorinya, dan **4 event awal**:
+   Bangkok (PO dibuka), Australia, Jepang, dan Jakarta Premium Outlet (draft).
 
 > **Sudah pernah menjalankan versi lama?** Jalankan ulang `schema.sql` versi terbaru. Data lama tetap aman:
 > kolom baru ditambahkan, dan pesanan lama otomatis dihubungkan ke event yang namanya cocok dengan trip-nya.
@@ -64,6 +64,8 @@ Buka **Saya → Event jastip → Kelola** (hanya owner). Setiap event punya peng
 - **Kategori** (Skincare, Vitamin, Sepatu, dst.) diatur di **Saya → Kategori produk**: satu baris satu kategori, emoji lalu nama.
 - Di web, buyer memilih event lewat tab di atas. Keranjang terpisah per event. Link langsung ke satu event: `.../toko/?e=bkk`.
 - Di aplikasi, chip bendera di kanan atas menunjukkan **event aktif** (ketuk untuk ganti). Pesanan, daftar belanja, dan kalkulator bisa difilter per event.
+- **Event dalam negeri** (mis. Jakarta Premium Outlet, Bandung factory outlet): pilih mata uang **IDR** dan bendera 🇮🇩. Kurs otomatis tidak dipakai,
+  kalkulator berubah menjadi *harga label − diskon outlet (%) + fee + ongkir/kg*. Fee flat per item (mis. Rp 25.000) biasanya paling cocok.
 - Foto banner: pakai foto milik sendiri atau yang boleh dipakai. Tanpa foto, web memakai warna tema dan bendera.
 
 ## Cara kerja sehari-hari
