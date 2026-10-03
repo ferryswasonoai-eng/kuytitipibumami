@@ -725,7 +725,7 @@ function viewLogin(mode = 'login', msg = '') {
   }
   const signup = mode === 'signup';
   view.innerHTML = `<div class="auth-wrap">
-    <div class="auth-logo"><svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 7h12l-1 13H7L6 7z"/><path d="M9 7a3 3 0 0 1 6 0"/><path d="M10 12a2 2 0 0 0 4 0"/></svg></div>
+    <img class="auth-logo-img" src="logo.png" alt="KuyTitipIbuMami">
     <h1 class="page-title center">${esc(S.business || 'KuyTitip')}</h1>
     <p class="page-sub center">${signup ? 'Daftar sebagai admin baru. Owner perlu menyetujui akun Anda.' : 'Masuk sebagai admin'}</p>
     ${msg ? `<div class="alert ${/berhasil/i.test(msg) ? 'ok' : 'err'}">${esc(msg)}</div>` : ''}
