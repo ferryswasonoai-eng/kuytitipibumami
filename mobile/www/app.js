@@ -11,9 +11,41 @@ const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const num = (v) => {
   if (typeof v === 'number') return isFinite(v) ? v : 0;
-  const n = parseFloat(String(v ?? '').trim().replace(/\s/g, '').replace(',', '.'));
+  let s = String(v ?? '').trim().replace(/\s/g, '').replace(/^Rp/i, '');
+  if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');      // 1.250,5 → 1250.5
+  else if (/^-?\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, '');   // 1.500.000 → 1500000
+  const n = parseFloat(s);
   return isFinite(n) ? n : 0;
 };
+/* Input angka biaya: pemisah ribuan otomatis (1.250.000), desimal pakai koma */
+const fmtMoneyVal = (v, dec = 0) => (v === '' || v == null || String(v).trim() === '') ? '' : num(v).toLocaleString('id-ID', { maximumFractionDigits: dec });
+function formatMoneyLive(el) {
+  const dec = +(el.dataset.dec || 0);
+  let raw = el.value;
+  if (dec && /\.$/.test(raw) && !raw.includes(',')) raw = raw.slice(0, -1) + ',';
+  const caret = el.selectionStart ?? raw.length;
+  const digitsBefore = raw.slice(0, caret).replace(/[^\d,]/g, '').length;
+  let s = raw.replace(/[^\d,]/g, '');
+  let [i, ...rest] = s.split(',');
+  i = i.replace(/^0+(?=\d)/, '');
+  let out = i.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  if (dec && s.includes(',')) out += ',' + rest.join('').slice(0, dec);
+  if (out === raw) return;
+  el.value = out;
+  let pos = 0, seen = 0;
+  while (pos < out.length && seen < digitsBefore) { if (/[\d,]/.test(out[pos])) seen++; pos++; }
+  try { el.setSelectionRange(pos, pos); } catch (e) { /* type tidak mendukung */ }
+}
+function formatMoneyInputs(root = document) {
+  $$('input[data-money]', root).forEach((el) => { el.value = fmtMoneyVal(el.value, +(el.dataset.dec || 0)); });
+}
+(() => {
+  const desc = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+  Object.defineProperty(HTMLInputElement.prototype, 'value', {
+    configurable: true, enumerable: desc.enumerable, get() { return desc.get.call(this); },
+    set(v) { desc.set.call(this, this.dataset && this.dataset.money !== undefined && typeof v === 'number' ? fmtMoneyVal(v, +(this.dataset.dec || 0)) : v); },
+  });
+})();
 const NO_DEC = new Set(['IDR', 'JPY', 'KRW', 'VND']);
 const fmtIDR = (n) => 'Rp ' + Math.round(num(n)).toLocaleString('id-ID');
 const fmtCur = (n, cur) => cur === 'IDR' ? fmtIDR(n)
@@ -585,6 +617,7 @@ function openSheet(html, onMount) {
   sheet.onclick = (e) => { if (e.target === sheet) closeSheet(); };
   sheet.onclose = null;
   onMount && onMount(sheet);
+  formatMoneyInputs(sheet);
 }
 function closeSheet() { if (sheet.open) sheet.close(); }
 function confirmSheet(msg, okLabel = 'Ya, lanjut', danger = true, sub = '') {
@@ -921,7 +954,7 @@ async function viewHome() {
       <div class="field"><label>Mata uang belanja</label>
         <select class="input" id="cCur">${curOptions(c.cur, true).replace('<option value="IDR"', '<option disabled value="IDR"')}</select></div>
       <div class="field"><label>Kurs ke IDR</label>
-        <div class="row"><input class="input grow" id="cRate" inputmode="decimal" value="${rateOf(c.cur) || ''}" placeholder="mis. 487">
+        <div class="row"><input class="input grow" id="cRate" data-money data-dec="4" inputmode="decimal" value="${rateOf(c.cur) || ''}" placeholder="mis. 487">
         <button class="btn sm" id="cRefresh" type="button">↻ Perbarui</button></div>
         <div class="help" id="cRateInfo"></div></div>
     </section>
@@ -931,9 +964,9 @@ async function viewHome() {
       <p class="hint">Persen dihitung dari harga beli (sudah dalam Rupiah), atau langsung nilai flat per item.</p>
       <div class="field"><label>Jenis fee</label>
         <div class="seg" id="cFeeType"><button type="button" data-v="percent">Persen (%)</button><button type="button" data-v="flat">Flat (Rp)</button></div></div>
-      <div class="field"><label id="cFeeLbl">Nilai fee</label><input class="input" id="cFee" inputmode="decimal" value="${c.fee.value}"></div>
+      <div class="field"><label id="cFeeLbl">Nilai fee</label><input class="input" id="cFee" data-money data-dec="2" inputmode="decimal" value="${c.fee.value}"></div>
       <div class="two">
-        <div class="field"><label>Ongkir per kg (Rp)</label><input class="input" id="cShip" inputmode="decimal" value="${c.ship || ''}" placeholder="0"></div>
+        <div class="field"><label>Ongkir per kg (Rp)</label><input class="input" id="cShip" data-money inputmode="decimal" value="${c.ship || ''}" placeholder="0"></div>
         <div class="field"><label>Pembulatan ke atas</label>
           <select class="input" id="cRound">${[0, 500, 1000, 5000, 10000].map((v) => `<option value="${v}" ${v === num(c.round) ? 'selected' : ''}>${v ? fmtIDR(v) : 'Tanpa'}</option>`).join('')}</select></div>
       </div>
@@ -942,8 +975,8 @@ async function viewHome() {
     <section class="card">
       <h2>Coba hitung</h2>
       <div class="two">
-        <div class="field"><label id="cBuyLbl">Harga beli</label><input class="input" id="cBuy" inputmode="decimal" placeholder="0"></div>
-        <div class="field"><label>Berat (gram)</label><input class="input" id="cWeight" inputmode="decimal" placeholder="0"></div>
+        <div class="field"><label id="cBuyLbl">Harga beli</label><input class="input" id="cBuy" data-money data-dec="2" inputmode="decimal" placeholder="0"></div>
+        <div class="field"><label>Berat (gram)</label><input class="input" id="cWeight" data-money inputmode="decimal" placeholder="0"></div>
       </div>
       <div class="result" id="cResult"></div>
       ${isOwner() ? `<div class="toggle-row" style="margin-top:12px;padding-bottom:4px"><span>Kunci kurs ini untuk semua admin</span>
@@ -1101,17 +1134,17 @@ async function viewOrderForm(id) {
       <div class="field"><label class="req">Nama barang</label><input class="input" data-k="name" value="${esc(it.name)}" placeholder="mis. Tofu Precious Moisturizing"></div>
       <div class="two">
         <div class="field"><label class="req">Qty</label><input class="input" data-k="qty" inputmode="numeric" value="${esc(it.qty)}"></div>
-        <div class="field"><label>Berat satuan (gram)</label><input class="input" data-k="weight" inputmode="decimal" value="${esc(it.weight)}"></div>
+        <div class="field"><label>Berat satuan (gram)</label><input class="input" data-k="weight" data-money inputmode="decimal" value="${esc(it.weight)}"></div>
       </div>
       <div class="field">
         <div class="money-row"><label class="req label-row">Harga beli satuan</label><label class="label-row">Mata uang</label></div>
-        <div class="money-row"><input class="input" data-k="buyPrice" inputmode="decimal" value="${esc(it.buyPrice)}" placeholder="0">
+        <div class="money-row"><input class="input" data-k="buyPrice" data-money data-dec="2" inputmode="decimal" value="${esc(it.buyPrice)}" placeholder="0">
           <select class="input" data-k="buyCur">${curOptions(it.buyCur)}</select></div>
         <div class="help" data-help="buy"></div>
       </div>
       <div class="field">
         <div class="money-row"><label class="req label-row">Harga jual satuan</label><label class="label-row">Mata uang</label></div>
-        <div class="money-row"><input class="input" data-k="sellPrice" inputmode="decimal" value="${esc(it.sellPrice)}" placeholder="0">
+        <div class="money-row"><input class="input" data-k="sellPrice" data-money data-dec="2" inputmode="decimal" value="${esc(it.sellPrice)}" placeholder="0">
           <select class="input" data-k="sellCur">${curOptions(it.sellCur || 'IDR')}</select></div>
         <div class="help" data-help="sell">Isi dalam ${esc(it.sellCur || 'IDR')} (harga ke customer)</div>
       </div>
@@ -1119,12 +1152,12 @@ async function viewOrderForm(id) {
       <button type="button" class="btn" data-act="quick">Hitung harga jual (cepat)</button>
       <details class="calc"><summary>Hitung harga jual</summary><div class="calc-body">
         <div class="two">
-          <div class="field"><label data-rate-lbl>Kurs ${esc(it.buyCur)} → IDR</label><input class="input" data-c="rate" inputmode="decimal" value="${esc(it.rate)}"></div>
-          <div class="field"><label>Ongkir/kg (Rp)</label><input class="input" data-c="ship" inputmode="decimal" value="${esc(S.shipPerKg || '')}"></div>
+          <div class="field"><label data-rate-lbl>Kurs ${esc(it.buyCur)} → IDR</label><input class="input" data-c="rate" data-money data-dec="4" inputmode="decimal" value="${esc(it.rate)}"></div>
+          <div class="field"><label>Ongkir/kg (Rp)</label><input class="input" data-c="ship" data-money inputmode="decimal" value="${esc(S.shipPerKg || '')}"></div>
         </div>
         <div class="two">
           <div class="field"><label>Jenis fee</label><select class="input" data-c="feeType"><option value="percent" ${S.fee.type === 'percent' ? 'selected' : ''}>Persen</option><option value="flat" ${S.fee.type === 'flat' ? 'selected' : ''}>Flat (Rp)</option></select></div>
-          <div class="field"><label>Nilai fee</label><input class="input" data-c="fee" inputmode="decimal" value="${esc(S.fee.value)}"></div>
+          <div class="field"><label>Nilai fee</label><input class="input" data-c="fee" data-money data-dec="2" inputmode="decimal" value="${esc(S.fee.value)}"></div>
         </div>
         <div class="result" data-calc-result></div>
         <button type="button" class="btn primary" data-act="apply" style="margin-top:12px">Pakai harga ini</button>
@@ -1157,11 +1190,11 @@ async function viewOrderForm(id) {
     <section class="card">
       <h2>Pembayaran</h2>
       <div class="two">
-        <div class="field"><label>Ongkir ke customer (Rp)</label><input class="input" id="oShip" inputmode="decimal" value="${esc(o.shipping)}" placeholder="0"></div>
-        <div class="field"><label>Diskon (Rp)</label><input class="input" id="oDisc" inputmode="decimal" value="${esc(o.discount)}" placeholder="0"></div>
+        <div class="field"><label>Ongkir ke customer (Rp)</label><input class="input" id="oShip" data-money inputmode="decimal" value="${esc(o.shipping)}" placeholder="0"></div>
+        <div class="field"><label>Diskon (Rp)</label><input class="input" id="oDisc" data-money inputmode="decimal" value="${esc(o.discount)}" placeholder="0"></div>
       </div>
       ${isNew ? `<div class="field"><label>DP / pembayaran awal (Rp)</label>
-        <div class="row"><input class="input grow" id="oPaid" inputmode="decimal" placeholder="0"><button type="button" class="btn sm" id="payFull">Lunas</button></div></div>
+        <div class="row"><input class="input grow" id="oPaid" data-money inputmode="decimal" placeholder="0"><button type="button" class="btn sm" id="payFull">Lunas</button></div></div>
         <div class="field"><label>Metode</label><select class="input" id="oPayMethod">${PAY_METHODS.map((m) => `<option>${m}</option>`).join('')}</select></div>`
       : `<p class="help" style="margin-top:-4px">Sudah dibayar ${fmtIDR(paidSoFar)}. Tambah pembayaran dari halaman detail pesanan.</p>`}
       <div class="result" id="oSum"></div>
@@ -1183,6 +1216,7 @@ async function viewOrderForm(id) {
   const cardOf = (i) => $(`.item-card[data-i="${i}"]`, itemsEl);
   const renderItems = async () => {
     itemsEl.innerHTML = o.items.map(itemHTML).join('');
+    formatMoneyInputs(itemsEl);
     o.items.forEach((_, i) => updateItemHelp(i));
     await hydratePhotos(itemsEl);
   };
@@ -1543,7 +1577,7 @@ async function viewOrderDetail(id) {
 function paymentSheet(o, t, done) {
   openSheet(`<h3>Catat pembayaran</h3>
     <p class="muted">Sisa tagihan ${fmtIDR(t.due)}</p>
-    <div class="field"><label class="req">Jumlah (Rp)</label><div class="row"><input class="input grow" id="pyAmt" inputmode="decimal" value="${t.due || ''}"><button class="btn sm" id="pyFull" type="button">Lunasi</button></div></div>
+    <div class="field"><label class="req">Jumlah (Rp)</label><div class="row"><input class="input grow" id="pyAmt" data-money inputmode="decimal" value="${t.due || ''}"><button class="btn sm" id="pyFull" type="button">Lunasi</button></div></div>
     <div class="field"><label>Metode</label><select class="input" id="pyMethod">${PAY_METHODS.map((m) => `<option>${m}</option>`).join('')}</select></div>
     <div class="field"><label>Catatan</label><input class="input" id="pyNote" placeholder="mis. DP 50%, pelunasan"></div>
     <div class="btn-col"><button class="btn primary" id="pySave">Simpan pembayaran</button><button class="btn ghost" data-close>Batal</button></div>`, (s) => {
@@ -1678,15 +1712,15 @@ async function viewProductForm(id) {
       <div class="field"><label class="req">Nama produk</label><input class="input" id="pName" value="${esc(p.name)}"></div>
       <div class="two">
         <div class="field"><label>Brand / toko</label><input class="input" id="pBrand" list="brandList" value="${esc(p.brand)}"><datalist id="brandList">${brands.map((b) => `<option value="${esc(b)}">`).join('')}</datalist></div>
-        <div class="field"><label>Berat (gram)</label><input class="input" id="pWeight" inputmode="decimal" value="${esc(p.weight)}"></div>
+        <div class="field"><label>Berat (gram)</label><input class="input" id="pWeight" data-money inputmode="decimal" value="${esc(p.weight)}"></div>
       </div>
       <div class="field"><label>Deskripsi (tampil di web)</label><textarea class="input" id="pDesc">${esc(p.description)}</textarea></div>
       ${isShopper() ? '' : `<div class="field">
         <div class="money-row"><label class="label-row">Harga beli</label><label class="label-row">Mata uang</label></div>
-        <div class="money-row"><input class="input" id="pBuy" inputmode="decimal" value="${esc(p.buyPrice)}"><select class="input" id="pCur">${curOptions(p.buyCur || 'THB')}</select></div>
+        <div class="money-row"><input class="input" id="pBuy" data-money data-dec="2" inputmode="decimal" value="${esc(p.buyPrice)}"><select class="input" id="pCur">${curOptions(p.buyCur || 'THB')}</select></div>
       </div>`}
       <div class="field"><label>Harga jual (Rp)</label>
-        <div class="row"><input class="input grow" id="pSell" inputmode="decimal" value="${esc(p.sellPrice)}">${ro ? '' : '<button class="btn sm" id="pCalc" type="button">Hitung</button>'}</div>
+        <div class="row"><input class="input grow" id="pSell" data-money inputmode="decimal" value="${esc(p.sellPrice)}">${ro ? '' : '<button class="btn sm" id="pCalc" type="button">Hitung</button>'}</div>
         <div class="help" id="pHelp"></div></div>
       <div class="toggle-row"><span>Tampilkan di web katalog</span><label class="switch"><input type="checkbox" id="pPub" ${p.published !== false ? 'checked' : ''}><span></span></label></div>
       ${isShopper() ? '' : `<div class="field"><label>Catatan internal</label><textarea class="input" id="pNote">${esc(p.note)}</textarea></div>`}
@@ -2015,7 +2049,7 @@ async function route(opts = {}) {
   for (const [re, fn] of ROUTES) {
     const m = h.match(re);
     if (m) {
-      try { await fn(m, params); } catch (e) { console.error(e); view.innerHTML = `<div class="empty"><div class="big">⚠️</div>Terjadi kesalahan: ${esc(e.message)}</div>`; }
+      try { await fn(m, params); formatMoneyInputs(view); } catch (e) { console.error(e); view.innerHTML = `<div class="empty"><div class="big">⚠️</div>Terjadi kesalahan: ${esc(e.message)}</div>`; }
       if (!opts.keepScroll) window.scrollTo(0, 0);
       return;
     }
@@ -2029,6 +2063,7 @@ async function boot() {
   await loadLocalSettings();
   renderChrome();
   window.addEventListener('hashchange', () => route());
+  document.addEventListener('input', (e) => { if (e.target.matches && e.target.matches('input[data-money]')) formatMoneyLive(e.target); }, true);
   $('#syncBtn').onclick = () => { location.hash = '#/saya'; };
   document.addEventListener('focusin', (e) => { if (e.target.matches('input:not([type=file]):not([type=checkbox]), textarea, select')) document.body.classList.add('typing'); });
   document.addEventListener('focusout', () => setTimeout(() => { if (!document.activeElement || !document.activeElement.matches('input, textarea, select')) document.body.classList.remove('typing'); }, 50));
