@@ -375,7 +375,7 @@ function fromRow(table, r) {
 
 /* ================= Sinkronisasi ================= */
 const Sync = {
-  online: navigator.onLine, flushing: false, pulling: false, lastSync: 0, pending: 0, failed: 0, realtime: 'off',
+  online: navigator.onLine, flushing: false, pulling: false, lastSync: 0, pending: 0, failed: 0, realtime: 'off', lastError: '',
   async enqueue(op) {
     if (op.kind === 'upsert') {
       const old = (await DB.all('outbox')).filter((x) => x.table === op.table && x.id === op.id && x.kind === 'upsert' && !x.failed);
@@ -408,6 +408,12 @@ const Sync = {
         if (!error) { p.uploaded = true; await DB.put('photos', p); }
       } else if (op.kind === 'upsert') {
         ({ error } = await supa.from(op.table).upsert(op.row, { onConflict: 'id' }));
+        if (error && error.code === '42501') {
+          // upsert juga memeriksa izin INSERT (mis. shopper) — untuk baris yang sudah ada, coba UPDATE biasa
+          const { id, created_at, ...patch } = op.row;
+          const r2 = await supa.from(op.table).update(patch).eq('id', op.id).select('id');
+          if (!r2.error && r2.data && r2.data.length) error = null;
+        }
       } else if (op.kind === 'insert') {
         ({ error } = await supa.from(op.table).upsert(op.row, { onConflict: 'id', ignoreDuplicates: true }));
       } else if (op.kind === 'update') {
@@ -437,7 +443,14 @@ const Sync = {
         if (op.failed) continue;
         const res = await this.run(op);
         if (res === 'ok') { await DB.del('outbox', op.seq); progressed = true; this.online = true; }
-        else if (res === 'retry') { if (!navigator.onLine) this.online = false; break; }
+        else if (res === 'retry') {
+          if (!navigator.onLine) { this.online = false; break; }
+          if (op.table === 'photo') continue;  // foto lambat/gagal jangan menahan data lain
+          op.tries = (op.tries || 0) + 1;
+          if (op.tries >= 8) { op.failed = true; op.error = 'Server tidak merespons setelah beberapa kali percobaan'; }
+          await DB.put('outbox', op);
+          break;
+        }
         else { op.failed = true; op.error = res; await DB.put('outbox', op); toast('Gagal sinkron: ' + res, 4000); }
       }
     } finally {
@@ -466,20 +479,27 @@ const Sync = {
     try {
       const lp = full ? {} : ((await kvGet('lastPull')) || {});
       const pending = await this.pendingIds();
+      const errs = [];
       for (const t of DATA_TABLES) {
-        let from = 0; let max = lp[t];
-        const page = 500;
-        for (;;) {
-          let q = supa.from(t).select('*').order('updated_at', { ascending: true }).range(from, from + page - 1);
-          if (lp[t]) q = q.gt('updated_at', new Date(Date.parse(lp[t]) - 120000).toISOString());
-          const { data, error } = await q;
-          if (error) throw error;
-          changed += await this.applyRemote(t, data, pending);
-          if (data.length) { const last = data[data.length - 1].updated_at; if (!max || Date.parse(last) > Date.parse(max)) max = last; }
-          if (data.length < page) break;
-          from += page;
+        // satu tabel gagal tidak boleh menghentikan tabel lain
+        try {
+          let from = 0; let max = lp[t];
+          const page = 500;
+          for (;;) {
+            let q = supa.from(t).select('*').order('updated_at', { ascending: true }).range(from, from + page - 1);
+            if (lp[t]) q = q.gt('updated_at', new Date(Date.parse(lp[t]) - 120000).toISOString());
+            const { data, error } = await q;
+            if (error) throw error;
+            changed += await this.applyRemote(t, data, pending);
+            if (data.length) { const last = data[data.length - 1].updated_at; if (!max || Date.parse(last) > Date.parse(max)) max = last; }
+            if (data.length < page) break;
+            from += page;
+          }
+          if (max) lp[t] = max;
+        } catch (e) {
+          if (this.isTransient(e)) throw e;
+          errs.push(`${t}: ${e.message || e}`);
         }
-        if (max) lp[t] = max;
       }
       const { data: st, error: e2 } = await supa.from('settings').select('*').eq('id', 'main').maybeSingle();
       if (e2) throw e2;
@@ -502,8 +522,11 @@ const Sync = {
       await kvPut('lastPull', lp);
       this.lastSync = Date.now();
       this.online = true;
+      this.lastError = errs.join(' · ');
+      if (errs.length) console.warn('Sinkron sebagian gagal:', this.lastError);
     } catch (e) {
       if (this.isTransient(e)) this.online = false;
+      else this.lastError = String(e.message || e);
       throw e;
     } finally {
       this.pulling = false;
@@ -515,7 +538,20 @@ const Sync = {
     if (!supa || this.channel) return;
     this.channel = supa.channel('kt-sync')
       .on('postgres_changes', { event: '*', schema: 'public' }, (payload) => this.onRemote(payload))
-      .subscribe((status) => { this.realtime = status === 'SUBSCRIBED' ? 'on' : 'off'; this.updateStatus(); });
+      .subscribe((status) => {
+        this.realtime = status === 'SUBSCRIBED' ? 'on' : 'off';
+        this.updateStatus();
+        if (['CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED'].includes(status)) this.resubscribe();
+      });
+  },
+  resubscribe() {
+    clearTimeout(this._rs);
+    this._rs = setTimeout(async () => {
+      if (!ME || this.realtime === 'on') return;
+      try { if (this.channel) await supa.removeChannel(this.channel); } catch (e) { /* abaikan */ }
+      this.channel = null; this.subscribe();
+      this.sync();  // ambil perubahan yang terlewat selama realtime putus
+    }, 5000);
   },
   async onRemote(payload) {
     const t = payload.table; const r = payload.new;
@@ -529,8 +565,11 @@ const Sync = {
     onDataChanged(t);
   },
   async sync() {
-    await this.flush();
-    try { const c = await this.pull(); if (c) onDataChanged('*'); } catch (e) { /* offline */ }
+    if (this._syncing) return; this._syncing = true;
+    try {
+      await this.flush();
+      try { const c = await this.pull(); if (c) onDataChanged('*'); } catch (e) { /* offline / dicatat di lastError */ }
+    } finally { this._syncing = false; this.updateStatus(); }
   },
   start() {
     if (this.started) return;
@@ -538,9 +577,10 @@ const Sync = {
     this.subscribe();
     window.addEventListener('online', () => { this.online = true; this.sync(); });
     window.addEventListener('offline', () => { this.online = false; this.updateStatus(); });
-    setInterval(() => this.sync(), 60000);
+    setInterval(() => this.sync(), 30000);
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { this.sync(); if (this.realtime !== 'on') this.resubscribe(); } });
     const App = plugin('App');
-    if (App) App.addListener('appStateChange', (s) => { if (s.isActive) this.sync(); });
+    if (App) App.addListener('appStateChange', (s) => { if (s.isActive) { this.sync(); if (this.realtime !== 'on') this.resubscribe(); } });
   },
   async updateStatus() {
     const ops = await DB.all('outbox');
@@ -550,8 +590,8 @@ const Sync = {
     if (!b || !ME) return;
     b.hidden = false;
     const off = !navigator.onLine || !this.online;
-    b.className = 'sync-chip ' + (this.failed ? 'err' : off ? 'off' : this.pending ? 'pending' : 'ok');
-    $('.txt', b).textContent = this.failed ? `${this.failed} gagal` : off ? 'Offline' : this.pending ? `${this.pending} antre` : 'Sinkron';
+    b.className = 'sync-chip ' + (this.failed || this.lastError ? 'err' : off ? 'off' : this.pending ? 'pending' : 'ok');
+    $('.txt', b).textContent = this.failed ? `${this.failed} gagal` : off ? 'Offline' : this.pending ? `${this.pending} antre` : this.lastError ? 'Cek sinkron' : 'Sinkron';
   },
 };
 
@@ -1619,7 +1659,9 @@ async function viewOrderForm(id) {
 }
 
 async function pickProduct(evId, onPick) {
-  const products = (await DB.all('products')).filter((p) => !evId || !(p.events || []).length || p.events.includes(evId)).sort((a, b) => (a.brand || '').localeCompare(b.brand || '') || a.name.localeCompare(b.name));
+  const inEv = (p) => !evId || !(p.events || []).length || p.events.includes(evId);
+  // produk event ini di atas, produk event lain tetap bisa dipilih (ditandai)
+  const products = (await DB.all('products')).sort((a, b) => (inEv(b) - inEv(a)) || (a.brand || '').localeCompare(b.brand || '') || a.name.localeCompare(b.name));
   if (!products.length) return toast('Katalog produk masih kosong');
   openSheet(`<h3>Pilih produk</h3><input class="input" id="pq" placeholder="Cari produk / brand…"><div class="pick" id="plist"></div>
     <button class="btn ghost" data-close>Tutup</button>`, (s) => {
@@ -1627,7 +1669,7 @@ async function pickProduct(evId, onPick) {
       const q = $('#pq', s).value.toLowerCase();
       $('#plist', s).innerHTML = products.filter((p) => !q || (p.name + ' ' + (p.brand || '')).toLowerCase().includes(q)).slice(0, 80).map((p) => `
         <button class="list-item" data-pid-pick="${p.id}">${thumbHTML(p.photo)}
-        <div style="flex:1;min-width:0"><div class="title">${esc(p.name)}</div><div class="sub">${p.brand ? esc(p.brand) : ''}${p.buyPrice ? ' · beli ' + fmtCur(p.buyPrice, p.buyCur) : ''}</div></div>
+        <div style="flex:1;min-width:0"><div class="title">${esc(p.name)}</div><div class="sub">${p.brand ? esc(p.brand) : ''}${p.buyPrice ? ' · beli ' + fmtCur(p.buyPrice, p.buyCur) : ''}${inEv(p) ? '' : ` · <span style="color:var(--warn)">${esc((p.events || []).map((id) => evById(id)?.name).filter(Boolean).join(', ') || 'event lain')}</span>`}</div></div>
         <div class="amount">${p.sellPrice ? fmtIDR(p.sellPrice) : ''}</div></button>`).join('') || '<div class="empty">Tidak ditemukan</div>';
       hydratePhotos(s);
     };
@@ -2138,7 +2180,8 @@ async function viewSettings() {
       <div class="kv"><span>Menunggu dikirim</span><span>${ops.length - failed.length}</span></div>
       ${failed.length ? `<div class="alert err" style="margin-top:12px"><b>${failed.length} perubahan gagal dikirim</b>${failed.slice(0, 5).map((f) => `<div class="small">• ${esc(f.table)} ${esc(f.id)}: ${esc(f.error)}</div>`).join('')}</div>
         <div class="two"><button class="btn" id="retryFailed">Coba lagi</button><button class="btn danger" id="dropFailed">Buang</button></div>` : ''}
-      <button class="btn" id="syncNow" style="margin-top:12px">↻ Sinkron sekarang</button>
+      ${Sync.lastError ? `<div class="alert err" style="margin-top:12px"><b>Sebagian data gagal diunduh</b><div class="small" style="word-break:break-word">${esc(Sync.lastError)}</div><div class="small" style="margin-top:4px">Kirim tangkapan layar ini ke pengelola aplikasi bila terus muncul.</div></div>` : ''}
+      <div class="two" style="margin-top:12px"><button class="btn" id="syncNow">↻ Sinkron sekarang</button><button class="btn" id="syncFull">⤓ Unduh ulang semua</button></div>
     </section>
 
     <section class="card"><div class="card-head"><h2>Event jastip</h2><a href="#/event">${isOwner() ? 'Kelola' : 'Lihat'} →</a></div>
@@ -2204,6 +2247,13 @@ async function viewSettings() {
   on('#logout', logout);
   on('#pickEv', pickEventSheet);
   on('#syncNow', async () => { toast('Menyinkronkan…'); await Sync.flush(); try { await Sync.pull(); toast('Sinkron selesai ✓'); } catch (e) { toast('Gagal: ' + (e.message || e)); } viewSettings(); });
+  on('#syncFull', async () => {
+    toast('Mengunduh ulang semua data…');
+    await Sync.flush();
+    try { await Sync.pull({ full: true }); await loadEvents(); renderChrome(); onDataChanged('*'); toast(Sync.lastError ? 'Selesai, ada bagian yang gagal' : 'Data sudah terbaru ✓'); }
+    catch (e) { toast('Gagal: ' + (e.message || e), 4000); }
+    viewSettings();
+  });
   on('#retryFailed', async () => { for (const f of failed) { delete f.failed; delete f.error; await DB.put('outbox', f); } await Sync.flush(); viewSettings(); });
   on('#dropFailed', async () => {
     if (!(await confirmSheet('Buang perubahan yang gagal?', 'Buang', true, 'Data di HP akan diganti dengan versi server.'))) return;
@@ -2327,7 +2377,11 @@ async function boot() {
   renderChrome();
   window.addEventListener('hashchange', () => route());
   document.addEventListener('input', (e) => { if (e.target.matches && e.target.matches('input[data-money]')) formatMoneyLive(e.target); }, true);
-  $('#syncBtn').onclick = () => { location.hash = '#/saya'; };
+  $('#syncBtn').onclick = async () => {
+    if (Sync.failed || Sync.lastError) { location.hash = '#/saya'; return; }
+    toast('Menyinkronkan…'); await Sync.sync();
+    if (Sync.failed || Sync.lastError) location.hash = '#/saya'; else toast('Data sudah terbaru ✓');
+  };
   $('#rateChip').onclick = pickEventSheet;
   document.addEventListener('focusin', (e) => { if (e.target.matches('input:not([type=file]):not([type=checkbox]), textarea, select')) document.body.classList.add('typing'); });
   document.addEventListener('focusout', () => setTimeout(() => { if (!document.activeElement || !document.activeElement.matches('input, textarea, select')) document.body.classList.remove('typing'); }, 50));
