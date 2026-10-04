@@ -2332,6 +2332,12 @@ async function viewSettings() {
       <div class="two" style="margin-top:12px"><button class="btn" id="syncNow">↻ Sinkron sekarang</button><button class="btn" id="syncFull">⤓ Unduh ulang semua</button></div>
     </section>
 
+    ${isNative() ? `<section class="card">
+      <h2>WhatsApp di HP ini</h2>
+      <p class="hint">Dipakai untuk kirim invoice PDF langsung ke chat customer.</p>
+      <select class="input" id="waPkg">${[['', 'Otomatis (WhatsApp, lalu WA Business)'], ['com.whatsapp', 'WhatsApp'], ['com.whatsapp.w4b', 'WhatsApp Business']].map(([v, l]) => `<option value="${v}" ${v === waPkg() ? 'selected' : ''}>${l}</option>`).join('')}</select>
+    </section>` : ''}
+
     <section class="card"><div class="card-head"><h2>Event jastip</h2><a href="#/event">${isOwner() ? 'Kelola' : 'Lihat'} →</a></div>
       ${EVENTS.length ? EVENTS.filter((e) => e.status !== 'done').map((e) => `<div class="kv"><span>${esc(evLabel(e))}</span><span>${esc(evStatusLabel(e.status))}${e.id === curEv()?.id ? ' · <b style="color:var(--accent)">aktif</b>' : ''}</span></div>`).join('') : '<p class="muted">Belum ada event.</p>'}
       <button class="btn" id="pickEv" style="margin-top:12px">Ganti event aktif</button>
@@ -2404,6 +2410,7 @@ async function viewSettings() {
   on('#logout', logout);
   on('#pickEv', pickEventSheet);
   on('#syncNow', async () => { toast('Menyinkronkan…'); await Sync.flush(); try { await Sync.pull(); toast('Sinkron selesai ✓'); } catch (e) { toast('Gagal: ' + (e.message || e)); } viewSettings(); });
+  const wp = $('#waPkg'); if (wp) wp.onchange = () => { try { localStorage.setItem('kt-wa-pkg', wp.value); } catch (e) { /* abaikan */ } FORM_DIRTY = false; toast('Disimpan untuk HP ini ✓'); };
   on('#syncFull', async () => {
     toast('Mengunduh ulang semua data…');
     await Sync.flush();
@@ -2661,6 +2668,8 @@ async function buildInvoicePDF(o, cu, pays) {
   const safe = (x) => String(x || '').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-');
   return { doc, name: `Invoice-${o.code}${cu?.name ? '-' + safe(cu.name) : ''}.pdf` };
 }
+const waSharePlugin = () => { try { return plugin('WaShare') || (window.Capacitor && window.Capacitor.registerPlugin ? window.Capacitor.registerPlugin('WaShare') : null); } catch (e) { return null; } };
+const waPkg = () => { try { return localStorage.getItem('kt-wa-pkg') || ''; } catch (e) { return ''; } };
 async function sendInvoice(o, cu, pays) {
   toast('Membuat invoice PDF…');
   let r;
@@ -2668,10 +2677,20 @@ async function sendInvoice(o, cu, pays) {
   const text = `Invoice #${o.code}${cu?.name ? ' — ' + cu.name : ''}`;
   const Fs = plugin('Filesystem'); const Share = plugin('Share');
   if (isNative() && Fs && Share) {
+    let w;
     try {
       const b64 = r.doc.output('datauristring').split(',')[1];
-      const w = await Fs.writeFile({ path: r.name, data: b64, directory: 'CACHE' });
-      toast(cu?.name ? `Pilih WhatsApp, lalu kontak ${cu.name}` : 'Pilih WhatsApp untuk mengirim');
+      w = await Fs.writeFile({ path: r.name, data: b64, directory: 'CACHE' });
+    } catch (e) { return toast('Gagal menyimpan PDF: ' + (e.message || e), 4000); }
+    // langsung ke chat WhatsApp nomor customer (tanpa pilih kontak)
+    const phone = normPhone(cu?.phone || '');
+    const Wa = waSharePlugin();
+    if (phone && Wa) {
+      try { await Wa.sendFile({ path: w.uri, phone, mime: 'application/pdf', text, pkg: waPkg() }); return; }
+      catch (e) { console.warn('WaShare:', e); toast('Tidak bisa langsung ke chat — pilih WhatsApp & kontak manual', 3500); }
+    }
+    try {
+      if (!phone) toast('Nomor WA customer belum diisi — pilih kontak manual');
       await Share.share({ title: text, text, files: [w.uri], dialogTitle: 'Kirim invoice' });
     } catch (e) { if (!/cancel/i.test(String(e && e.message))) toast('Gagal membagikan: ' + (e.message || e), 4000); }
     return;
