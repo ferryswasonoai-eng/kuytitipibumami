@@ -1986,6 +1986,35 @@ function shareProduct(p, evHint) {
   shareText(p.name, `${ev ? `${ev.flag || ''} ${ev.title} ${ev.name}\n` : ''}*${p.name}*${p.brand ? ' (' + p.brand + ')' : ''}${price}${desc ? '\n' + desc : ''}\n\nLihat & pesan: ${webBase()}?${ev ? 'e=' + encodeURIComponent((ev.code || '').toLowerCase()) + '&' : ''}p=${encodeURIComponent(p.id)}`);
 }
 
+/* Saran isian (pengganti <datalist> — di Android tampil seperti dropdown tertutup & membingungkan) */
+const SUGGEST = { banks: ['BCA', 'BRI', 'Mandiri', 'BNI', 'BSI', 'CIMB Niaga', 'Permata', 'Bank Jago', 'SeaBank', 'blu by BCA', 'DANA', 'OVO', 'GoPay', 'ShopeePay'] };
+function showSuggest(inp) {
+  const list = SUGGEST[inp.dataset.suggest] || [];
+  let box = inp.nextElementSibling && inp.nextElementSibling.classList.contains('sug') ? inp.nextElementSibling : null;
+  if (!box) { box = document.createElement('div'); box.className = 'sug chips'; inp.insertAdjacentElement('afterend', box); }
+  const q = inp.value.trim().toLowerCase();
+  const hits = list.filter((x) => !q || x.toLowerCase().includes(q)).filter((x) => x.toLowerCase() !== q).slice(0, q ? 10 : 30);
+  const isNew = q && !list.some((x) => x.toLowerCase() === q);
+  box.innerHTML = hits.map((x) => `<button type="button" class="chip" data-sug="${esc(x)}">${esc(x)}</button>`).join('')
+    + (isNew ? `<span class="sug-new">✓ "${esc(inp.value.trim())}" akan ditambahkan sebagai baru</span>` : '');
+  box.hidden = !box.innerHTML;
+}
+document.addEventListener('focusin', (e) => { if (e.target.matches && e.target.matches('input[data-suggest]')) showSuggest(e.target); });
+document.addEventListener('input', (e) => { if (e.target.matches && e.target.matches('input[data-suggest]')) showSuggest(e.target); });
+document.addEventListener('focusout', (e) => {
+  if (!(e.target.matches && e.target.matches('input[data-suggest]'))) return;
+  const box = e.target.nextElementSibling;
+  setTimeout(() => { if (box && box.classList.contains('sug') && document.activeElement !== e.target) box.hidden = true; }, 200);
+});
+document.addEventListener('mousedown', (e) => { if (e.target.closest && e.target.closest('[data-sug]')) e.preventDefault(); });  // jangan hilangkan fokus
+document.addEventListener('click', (e) => {
+  const b = e.target.closest && e.target.closest('[data-sug]'); if (!b) return;
+  const box = b.closest('.sug'); const inp = box && box.previousElementSibling;
+  if (!inp) return;
+  inp.value = b.dataset.sug; inp.dispatchEvent(new Event('input', { bubbles: true })); inp.dispatchEvent(new Event('change', { bubbles: true }));
+  box.hidden = true;
+});
+
 /* ================= Tempel teks produk dari WhatsApp ================= */
 function parseProductText(text, opt = {}) {
   const brands = (opt.brands || []).filter(Boolean);
@@ -2084,7 +2113,8 @@ async function viewProductForm(id) {
   p = p ? { ...p, events: [...(p.events || [])] } : { id: 'p_' + uid(), name: '', brand: '', description: '', buyPrice: '', buyCur: evCfg(ev0).currency, sellPrice: '', weight: '', photo: '', note: '', published: true, sort: 0, createdAt: Date.now(),
     category: viewProducts.cat || '', events: ev0 ? [ev0.id] : [], badge: '', featured: false };
   const pEv = () => evById(p.events[0]) || curEv();
-  const brands = [...new Set((await DB.all('products')).map((x) => x.brand).filter(Boolean))].sort();
+  const brands = [...new Set((await DB.all('products')).map((x) => (x.brand || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  SUGGEST.brands = brands;
   // draf: isian tetap aman walau pindah ke WhatsApp / kamera atau aplikasi ditutup sistem
   const dKey = 'product:' + (id || 'new');
   const draft = ro ? null : Draft.get(dKey);
@@ -2102,12 +2132,12 @@ async function viewProductForm(id) {
     <section class="card">
       <div class="field"><label>Foto</label><div class="photos" id="pPhoto"></div></div>
       <div class="field"><label class="req">Nama produk</label><input class="input" id="pName" value="${esc(p.name)}"></div>
+      <div class="field"><label>Brand / toko</label><input class="input" id="pBrand" data-suggest="brands" autocomplete="off" autocapitalize="characters" placeholder="Ketik brand baru / pilih" value="${esc(p.brand)}"></div>
       <div class="two">
-        <div class="field"><label>Brand / toko</label><input class="input" id="pBrand" list="brandList" value="${esc(p.brand)}"><datalist id="brandList">${brands.map((b) => `<option value="${esc(b)}">`).join('')}</datalist></div>
+        <div class="field"><label>Kategori</label><select class="input" id="pCat"><option value="">— Pilih kategori —</option>${categories().map((c) => `<option value="${esc(c.name)}" ${c.name === p.category ? 'selected' : ''}>${esc(c.icon + ' ' + c.name)}</option>`).join('')}${p.category && !categories().some((c) => c.name === p.category) ? `<option selected>${esc(p.category)}</option>` : ''}</select></div>
         <div class="field"><label>Berat (gram)</label><input class="input" id="pWeight" data-money inputmode="decimal" value="${esc(p.weight)}"></div>
       </div>
       <div class="field"><label>Deskripsi (tampil di web)</label><textarea class="input" id="pDesc">${esc(p.description)}</textarea></div>
-      <div class="field"><label>Kategori</label><select class="input" id="pCat"><option value="">— Pilih kategori —</option>${categories().map((c) => `<option value="${esc(c.name)}" ${c.name === p.category ? 'selected' : ''}>${esc(c.icon + ' ' + c.name)}</option>`).join('')}${p.category && !categories().some((c) => c.name === p.category) ? `<option selected>${esc(p.category)}</option>` : ''}</select></div>
       <div class="field"><label>Tersedia di event</label>
         <div class="chips" style="flex-wrap:wrap" id="pEvents">${EVENTS.filter((e) => e.status !== 'done' || p.events.includes(e.id)).map((e) => `<button type="button" class="chip ${p.events.includes(e.id) ? 'on' : ''}" data-pev="${e.id}">${esc(evLabel(e))}</button>`).join('') || '<span class="muted small">Belum ada event</span>'}</div>
         <div class="help">Tidak dipilih = tampil di semua event.</div></div>
@@ -2367,7 +2397,7 @@ async function viewSettings() {
     <section class="card">
       <h2>Rekening pembayaran</h2>
       <p class="hint">Tampil di invoice PDF dan nota WhatsApp (variabel {rekening}). Maksimal 3 rekening / e-wallet.</p>
-      <datalist id="bankList">${['BCA', 'BRI', 'Mandiri', 'BNI', 'BSI', 'CIMB Niaga', 'Permata', 'Bank Jago', 'SeaBank', 'blu by BCA', 'DANA', 'OVO', 'GoPay', 'ShopeePay'].map((b) => `<option value="${b}">`).join('')}</datalist>
+
       <div id="bankRows"></div>
       <button class="btn sm" type="button" id="bankAdd" style="margin-bottom:12px">+ Tambah rekening</button>
       <div class="field" style="margin-bottom:0"><label>Catatan pembayaran (opsional)</label><textarea class="input" id="sInv" rows="2" placeholder="mis. Kirim bukti transfer via WhatsApp ya kak">${esc(S.invoiceNote || '')}</textarea></div>
@@ -2437,7 +2467,7 @@ async function viewSettings() {
   });
   on('#viewLog', showLog);
   const bankRow = (b = {}) => `<div class="bank-row">
-      <div class="two"><div class="field"><label>Bank / e-wallet</label><input class="input" data-b="bank" list="bankList" value="${esc(b.bank || '')}" placeholder="BCA"></div>
+      <div class="two"><div class="field"><label>Bank / e-wallet</label><input class="input" data-b="bank" data-suggest="banks" autocomplete="off" value="${esc(b.bank || '')}" placeholder="BCA"></div>
         <div class="field"><label>No. rekening</label><input class="input" data-b="number" inputmode="numeric" value="${esc(b.number || '')}" placeholder="1234567890"></div></div>
       <div class="row" style="gap:8px;align-items:flex-end"><div class="field grow" style="margin-bottom:0"><label>Atas nama</label><input class="input" data-b="name" value="${esc(b.name || '')}" placeholder="Nama pemilik rekening"></div>
         <button class="btn sm danger" type="button" data-bank-rm aria-label="Hapus rekening">✕</button></div></div>`;
