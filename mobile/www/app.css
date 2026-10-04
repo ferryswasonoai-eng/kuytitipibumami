@@ -419,3 +419,4 @@ input[type=date].input { -webkit-appearance: none; appearance: none; width: 100%
 .input.autofilled { border-color: var(--ok, #17915f); box-shadow: 0 0 0 3px rgba(23,145,95,.18); transition: box-shadow .3s; }
 .btn.wa-outline { background: #fff; color: #1a8f4b; border: 1.5px solid #1faa59; }
 .share-mini { flex-shrink: 0; width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--line, #e6e6ea); background: #fff; font-size: .95rem; display: grid; place-items: center; margin-left: 6px; cursor: pointer; }
+.bank-row { border: 1px solid var(--line, #e6e6ea); border-radius: 14px; padding: 12px 12px 10px; margin-bottom: 10px; }

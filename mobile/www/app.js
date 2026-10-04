@@ -1711,6 +1711,11 @@ function pickCustomer(customers, onPick) {
   });
 }
 
+function readBanks(keepEmpty = false) {
+  return $$('#bankRows .bank-row').map((r) => ({ bank: $('[data-b=bank]', r).value.trim(), number: $('[data-b=number]', r).value.replace(/[^\d\- ]/g, '').trim(), name: $('[data-b=name]', r).value.trim() }))
+    .filter((b) => keepEmpty || b.number);
+}
+const bankLines = () => (S.banks || []).filter((b) => b.number).map((b) => `${b.bank || 'Rek.'} ${b.number}${b.name ? ' a.n. ' + b.name : ''}`);
 function buildNota(o, cu, paid = 0) {
   const t = orderTotals(o, paid);
   const rincian = o.items.map((it, i) => {
@@ -1722,10 +1727,12 @@ function buildNota(o, cu, paid = 0) {
     nama: cu?.name || '', kode: o.code, trip: o.trip ? ` (${o.trip})` : '', rincian,
     subtotal: fmtIDR(t.subtotal), ongkir: fmtIDR(t.shipping), diskon: fmtIDR(t.discount), total: fmtIDR(t.total),
     dibayar: fmtIDR(t.paid), sisa: fmtIDR(t.due), status: statusLabel(o.status), usaha: S.business || '',
-    lacak, katalog: webBase(), event: evById(o.eventId) ? evLabel(evById(o.eventId)) : (o.trip || ''),
+    lacak, katalog: webBase(), rekening: bankLines().join('\n'), event: evById(o.eventId) ? evLabel(evById(o.eventId)) : (o.trip || ''),
   };
   let tpl = S.template || DEFAULT_TEMPLATE;
   if (!lacak) tpl = tpl.split('\n').filter((l) => !l.includes('{lacak}')).join('\n');
+  if (!bankLines().length) tpl = tpl.split('\n').filter((l) => !l.includes('{rekening}')).join('\n');
+  else if (!tpl.includes('{rekening}') && t.due > 0) tpl += '\n\nPembayaran ke:\n{rekening}';
   let txt = tpl.replace(/\{(\w+)\}/g, (m, k) => (k in map ? map[k] : m));
   if (t.discount && !/\{diskon\}/.test(tpl)) txt = txt.replace('*Total:', `Diskon: − ${fmtIDR(t.discount)}\n*Total:`);
   return txt.replace(/\n{3,}/g, '\n\n');
@@ -2349,7 +2356,15 @@ async function viewSettings() {
       <div class="field"><label>Nama usaha</label><input class="input" id="sBiz" value="${esc(S.business)}"></div>
       <div class="field"><label>No. WhatsApp usaha (penerima order web)</label><input class="input" id="sWa" inputmode="tel" value="${esc(S.ownerWa ? fmtPhone(S.ownerWa) : '')}"></div>
       <div class="field"><label>Link web buyer</label><input class="input" id="sWeb" value="${esc(S.webUrl)}"></div>
-      <div class="field"><label>Info pembayaran di invoice PDF</label><textarea class="input" id="sInv" rows="3" placeholder="mis. Transfer BCA 1234567890 a.n. Nama Anda&#10;Konfirmasi pembayaran via WhatsApp">${esc(S.invoiceNote || '')}</textarea></div>
+    </section>
+
+    <section class="card">
+      <h2>Rekening pembayaran</h2>
+      <p class="hint">Tampil di invoice PDF dan nota WhatsApp (variabel {rekening}). Maksimal 3 rekening / e-wallet.</p>
+      <datalist id="bankList">${['BCA', 'BRI', 'Mandiri', 'BNI', 'BSI', 'CIMB Niaga', 'Permata', 'Bank Jago', 'SeaBank', 'blu by BCA', 'DANA', 'OVO', 'GoPay', 'ShopeePay'].map((b) => `<option value="${b}">`).join('')}</datalist>
+      <div id="bankRows"></div>
+      <button class="btn sm" type="button" id="bankAdd" style="margin-bottom:12px">+ Tambah rekening</button>
+      <div class="field" style="margin-bottom:0"><label>Catatan pembayaran (opsional)</label><textarea class="input" id="sInv" rows="2" placeholder="mis. Kirim bukti transfer via WhatsApp ya kak">${esc(S.invoiceNote || '')}</textarea></div>
     </section>
 
     <section class="card">
@@ -2360,7 +2375,7 @@ async function viewSettings() {
 
     <section class="card">
       <h2>Template nota WhatsApp</h2>
-      <p class="hint">Kode: {nama} {kode} {trip} {event} {rincian} {subtotal} {ongkir} {diskon} {total} {dibayar} {sisa} {status} {lacak} {katalog} {usaha}</p>
+      <p class="hint">Kode: {nama} {kode} {trip} {event} {rincian} {subtotal} {ongkir} {diskon} {total} {dibayar} {sisa} {status} {lacak} {katalog} {usaha} {rekening}</p>
       <textarea class="input" id="sTpl" style="min-height:240px">${esc(S.template)}</textarea>
       <button class="btn ghost" id="sTplReset" style="margin-top:8px">Kembalikan ke template bawaan</button>
     </section>
@@ -2414,11 +2429,23 @@ async function viewSettings() {
     toast(`${a.name}: ${roleLabel(a.role)}`);
   });
   on('#viewLog', showLog);
+  const bankRow = (b = {}) => `<div class="bank-row">
+      <div class="two"><div class="field"><label>Bank / e-wallet</label><input class="input" data-b="bank" list="bankList" value="${esc(b.bank || '')}" placeholder="BCA"></div>
+        <div class="field"><label>No. rekening</label><input class="input" data-b="number" inputmode="numeric" value="${esc(b.number || '')}" placeholder="1234567890"></div></div>
+      <div class="row" style="gap:8px;align-items:flex-end"><div class="field grow" style="margin-bottom:0"><label>Atas nama</label><input class="input" data-b="name" value="${esc(b.name || '')}" placeholder="Nama pemilik rekening"></div>
+        <button class="btn sm danger" type="button" data-bank-rm aria-label="Hapus rekening">✕</button></div></div>`;
+  const br = $('#bankRows');
+  if (br) {
+    const draw = (list) => { br.innerHTML = list.map(bankRow).join(''); $('#bankAdd').hidden = list.length >= 3; };
+    draw((S.banks && S.banks.length) ? S.banks : [{}]);
+    $('#bankAdd').onclick = () => { const l = readBanks(true); if (l.length < 3) { l.push({}); draw(l); } };
+    br.onclick = (e) => { const rm = e.target.closest('[data-bank-rm]'); if (!rm) return; rm.closest('.bank-row').remove(); if (!$('.bank-row', br)) draw([{}]); $('#bankAdd').hidden = false; FORM_DIRTY = true; };
+  }
   on('#sTplReset', () => { $('#sTpl').value = DEFAULT_TEMPLATE; });
   on('#sSave', async () => {
     Object.assign(S, {
       business: $('#sBiz').value.trim() || 'KuyTitip', ownerWa: normPhone($('#sWa').value),
-      webUrl: $('#sWeb').value.trim(), invoiceNote: $('#sInv').value.trim(), template: $('#sTpl').value || DEFAULT_TEMPLATE,
+      webUrl: $('#sWeb').value.trim(), invoiceNote: $('#sInv').value.trim(), banks: readBanks(), template: $('#sTpl').value || DEFAULT_TEMPLATE,
       categories: $('#sCats').value.split('\n').map((l) => l.trim()).filter(Boolean).map((l) => {
         const m = l.match(/^(\p{Extended_Pictographic}[\u{FE0F}\u{200D}\p{Extended_Pictographic}]*)\s*(.+)$/u);
         return m ? { icon: m[1], name: m[2].trim() } : { icon: '🛍️', name: l };
@@ -2565,13 +2592,23 @@ async function buildInvoicePDF(o, cu, pays) {
     pays.forEach((p) => { doc.text(pdfTxt(`${fmtDate(p.createdAt)} · ${p.method || 'Transfer'}${p.note ? ' · ' + p.note : ''}`), M, y); doc.text('Rp ' + nfmt(p.amount), M + 90, y, { align: 'right' }); y += 4.6; });
     y += 3;
   }
-  if (S.invoiceNote) {
-    const lines = doc.splitTextToSize(pdfTxt(S.invoiceNote), CW - 8);
-    const h = lines.length * 4.6 + 9;
+  const banks = (S.banks || []).filter((b) => b.number);
+  if (banks.length || S.invoiceNote) {
+    const note = S.invoiceNote ? doc.splitTextToSize(pdfTxt(S.invoiceNote), CW - 8) : [];
+    const h = 10 + banks.length * 10 + (note.length ? note.length * 4.6 + 2 : 0);
     if (y + h > 280) { doc.addPage(); y = M; }
     doc.setFillColor(253, 236, 234); doc.roundedRect(M, y, CW, h, 2, 2, 'F');
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.setTextColor(...RED); doc.text('Info pembayaran', M + 4, y + 6);
-    doc.setFont('helvetica', 'normal'); doc.setTextColor(...INK); doc.text(lines, M + 4, y + 11);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.setTextColor(...RED); doc.text(t.due > 0 ? 'Pembayaran / pelunasan ke' : 'Info pembayaran', M + 4, y + 6);
+    let yy = y + 12;
+    banks.forEach((b) => {
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(10.5); doc.setTextColor(...INK);
+      doc.text(pdfTxt(b.bank || 'Rekening'), M + 4, yy);
+      doc.text(pdfTxt(b.number), M + 42, yy);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...GREY);
+      if (b.name) doc.text(pdfTxt('a.n. ' + b.name), M + 42, yy + 4.2);
+      yy += 10;
+    });
+    if (note.length) { doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...INK); doc.text(note, M + 4, yy); }
     y += h + 5;
   }
   const lk = trackLink(o);
