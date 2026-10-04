@@ -1968,6 +1968,7 @@ async function viewProductForm(id) {
     </section></fieldset>
     <div class="btn-col">
       ${ro ? '' : '<button class="btn primary" id="pSave">Simpan produk</button>'}
+      ${id && webBase() && p.published !== false ? '<button class="btn" id="pShare">🔗 Bagikan link produk</button>' : ''}
       ${id && canSell() ? '<button class="btn" id="pOrder">Buat pesanan dengan produk ini</button>' : ''}
       ${id && isOwner() ? '<button class="btn danger" id="pDel">Hapus produk</button>' : ''}
     </div>`;
@@ -2010,6 +2011,12 @@ async function viewProductForm(id) {
   };
   const po = $('#pOrder');
   if (po) po.onclick = () => { viewOrderForm.openPicker = true; location.hash = '#/pesanan/baru'; };
+  const psh = $('#pShare');
+  if (psh) psh.onclick = () => {
+    const ev = (p.events || []).length ? (evById(viewProducts.ev) && p.events.includes(viewProducts.ev) ? evById(viewProducts.ev) : evById(p.events[0])) : curEv();
+    const price = p.sellPrice ? ' — ' + fmtIDR(p.sellPrice) : '';
+    shareText(p.name, `${ev ? `${ev.flag || ''} ${ev.title} ${ev.name}\n` : ''}*${p.name}*${p.brand ? ' (' + p.brand + ')' : ''}${price}\n${webBase()}?${ev ? 'e=' + encodeURIComponent((ev.code || '').toLowerCase()) + '&' : ''}p=${encodeURIComponent(p.id)}`);
+  };
   const pd = $('#pDel');
   if (pd) pd.onclick = async () => { if (!(await confirmSheet(`Hapus produk "${p.name}"?`, 'Hapus'))) return; await removeRow('products', p); toast('Produk dihapus'); location.hash = '#/produk'; };
 }
