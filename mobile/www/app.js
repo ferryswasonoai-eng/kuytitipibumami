@@ -381,7 +381,7 @@ const Sync = {
       const old = (await DB.all('outbox')).filter((x) => x.table === op.table && x.id === op.id && x.kind === 'upsert' && !x.failed);
       if (old.length) await DB.delMany('outbox', old.map((x) => x.seq));
     }
-    op.at = Date.now();
+    op.at = Date.now(); this.lastLocal = op.at;
     await DB.add('outbox', op);
     this.updateStatus();
     clearTimeout(this._t);
@@ -628,7 +628,7 @@ async function onDataChanged() {
   await loadEvents();
   updateBadge();
   renderChrome();
-  if (inForm()) { if (!onDataChanged._told) { onDataChanged._told = true; toast('Ada data baru dari admin lain — tampil setelah Anda selesai'); setTimeout(() => { onDataChanged._told = false; }, 20000); } return; }
+  if (inForm()) { if (!onDataChanged._told && Date.now() - (Sync.lastLocal || 0) > 5000) { onDataChanged._told = true; toast('Ada data baru dari admin lain — tampil setelah Anda selesai'); setTimeout(() => { onDataChanged._told = false; }, 20000); } return; }
   if (sheet.open || !ME || document.body.classList.contains('noauth')) return;
   clearTimeout(onDataChanged._t);
   onDataChanged._t = setTimeout(() => {
