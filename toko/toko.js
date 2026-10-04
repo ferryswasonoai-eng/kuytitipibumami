@@ -65,6 +65,8 @@ async function load() {
   Object.values(carts).forEach((c) => Object.keys(c).forEach((id) => { if (!ids.has(id)) delete c[id]; }));
   saveCarts();
   renderAll();
+  const pid = new URLSearchParams(location.search).get('p');
+  if (pid) openDetail(pid, { push: false });
 }
 
 function setEvent(ev) {
@@ -138,13 +140,14 @@ function cardHTML(p) {
   const n = cart()[p.id] || 0;
   const open = EV?.status === 'open';
   return `<article class="card">
-    <div class="ph" data-zoom="${esc(photoUrl(p.photo))}">${p.photo ? `<img src="${esc(photoUrl(p.photo))}" alt="${esc(p.name)}" loading="lazy" onerror="this.remove()">` : '📦'}
+    <div class="ph" data-open="${p.id}">${p.photo ? `<img src="${esc(photoUrl(p.photo))}" alt="${esc(p.name)}" loading="lazy" onerror="this.remove()">` : '📦'}
       ${p.badge ? `<span class="ribbon">${esc(p.badge)}</span>` : ''}
       <button class="heart" data-like="${p.id}" aria-label="Simpan">${likes.has(p.id) ? '♥' : '♡'}</button></div>
     <div class="body">
       ${p.brand ? `<div class="br">${esc(p.brand)}</div>` : ''}
-      <div class="nm">${esc(p.name)}</div>
-      ${p.description ? `<div class="ds">${esc(p.description)}</div>` : ''}
+      <div class="nm" data-open="${p.id}">${esc(p.name)}</div>
+      ${p.description ? `<div class="ds" data-open="${p.id}">${esc(p.description)}</div>` : ''}
+      <button class="more-link" type="button" data-open="${p.id}">Lihat detail ›</button>
       <div class="pr">${fmtIDR(p.price)}</div>
       <div class="buy">
         <div class="step"><button data-dec="${p.id}" aria-label="Kurangi">−</button><span>${n || 1}</span><button data-inc="${p.id}" aria-label="Tambah">+</button></div>
@@ -196,14 +199,76 @@ function setQty(id, qty) {
   if (qty) cart()[id] = qty; else delete cart()[id];
   saveCarts(); renderProducts(); renderBar();
   if (sheet.open && sheet.dataset.mode === 'cart') openCart();
+  if (sheet.open && sheet.dataset.mode === 'detail') openDetail(sheet.dataset.pid, { push: false });
 }
 
 function openSheet(html, mode) {
+  if (sheet.dataset.mode === 'detail' && mode !== 'detail') { sheet.classList.remove('sheet-pd'); setProductParam(''); }
   sheet.innerHTML = `<div class="sheet-in">${html}</div>`;
   sheet.dataset.mode = mode;
   if (!sheet.open) sheet.showModal();
 }
 sheet.addEventListener('click', (e) => { if (e.target === sheet || e.target.closest('[data-close]')) sheet.close(); });
+
+const catOf = (name) => (INFO.categories || []).find((c) => c.name === name);
+function similar(p) {
+  const pool = evProducts().filter((x) => x.id !== p.id);
+  const score = (x) => (x.brand && x.brand === p.brand ? 2 : 0) + (x.category && x.category === p.category ? 1 : 0);
+  return pool.filter((x) => score(x) > 0).sort((a, b) => score(b) - score(a)).slice(0, 8);
+}
+function setProductParam(id) {
+  const u = new URL(location.href);
+  if (id) u.searchParams.set('p', id); else u.searchParams.delete('p');
+  if (id && !new URLSearchParams(location.search).get('p')) history.pushState({ p: id }, '', u); else history.replaceState(history.state, '', u);
+}
+function openDetail(id, { push = true } = {}) {
+  const p = PRODUCTS.find((x) => x.id === id);
+  if (!p) return;
+  if (EV && p.events && p.events.length && !p.events.includes(EV.id)) { const ev = EVENTS.find((e) => p.events.includes(e.id)); if (ev) { EV = ev; renderAll(); } }
+  const n = cart()[p.id] || 0;
+  const qty = n || pending[p.id] || 1;
+  const open = EV?.status === 'open';
+  const c = p.category ? catOf(p.category) : null;
+  const sim = similar(p);
+  const url = (() => { const u = new URL(location.href); u.searchParams.set('e', (EV?.code || '').toLowerCase()); u.searchParams.set('p', p.id); return u.toString(); })();
+  openSheet(`
+    <div class="pd">
+      <div class="pd-ph" ${p.photo ? `data-zoom="${esc(photoUrl(p.photo))}"` : ''}>${p.photo ? `<img src="${esc(photoUrl(p.photo))}" alt="${esc(p.name)}" onerror="this.remove()">` : '<span>📦</span>'}
+        ${p.badge ? `<span class="ribbon">${esc(p.badge)}</span>` : ''}
+        <button class="pd-x" data-close aria-label="Tutup">✕</button>
+        ${p.photo ? '<span class="pd-zoom">🔍 Ketuk untuk perbesar</span>' : ''}</div>
+      <div class="pd-body">
+        ${p.brand ? `<button class="pd-br" data-brand-pd="${esc(p.brand)}">${esc(p.brand)} ›</button>` : ''}
+        <h2 class="pd-nm">${esc(p.name)}</h2>
+        <div class="pd-tags">${p.category ? `<span>${esc(c?.icon || '🛍️')} ${esc(p.category)}</span>` : ''}${EV ? `<span>${esc(EV.flag || '✈️')} Jastip ${esc(EV.name)}</span>` : ''}</div>
+        <div class="pd-pr">${fmtIDR(p.price)}<small>/pcs · sudah termasuk fee jastip</small></div>
+        ${p.description ? `<h3>Deskripsi</h3><p class="pd-ds">${esc(p.description)}</p>` : ''}
+        ${EV ? `<div class="pd-info">
+          ${EV.poStart || EV.poEnd ? `<div><i>🗓️</i><span><small>Periode PO</small>${esc(fmtRange(EV.poStart, EV.poEnd))}</span></div>` : ''}
+          ${EV.eta ? `<div><i>📦</i><span><small>Estimasi tiba</small>${esc(EV.eta)}</span></div>` : ''}
+          ${EV.note ? `<div><i>ℹ️</i><span><small>Info PO</small>${esc(EV.note)}</span></div>` : ''}
+          <div><i>🛡️</i><span><small>Garansi</small>100% original, dibeli langsung di toko</span></div></div>` : ''}
+        ${waNum() ? `<a class="pd-wa" target="_blank" rel="noopener" href="${esc(waLink(`Halo ${INFO.business || 'admin'}, saya mau tanya produk ini 🙏\n*${p.name}*${p.brand ? ' (' + p.brand + ')' : ''} — ${fmtIDR(p.price)}\n${url}`))}">💬 Tanya produk ini via WhatsApp</a>` : ''}
+        ${sim.length ? `<h3>Produk serupa</h3><div class="pd-sim">${sim.map((x) => `<button class="sim" data-open="${x.id}">
+          <span class="sim-ph">${x.photo ? `<img src="${esc(photoUrl(x.photo))}" alt="" loading="lazy" onerror="this.remove()">` : '📦'}</span>
+          <span class="sim-nm">${esc(x.name)}</span><b>${fmtIDR(x.price)}</b></button>`).join('')}</div>` : ''}
+      </div>
+      <div class="pd-buy">
+        <button class="heart pd-heart" data-like="${p.id}" aria-label="Simpan">${likes.has(p.id) ? '♥' : '♡'}</button>
+        <div class="step"><button data-dec="${p.id}" aria-label="Kurangi">−</button><span>${qty}</span><button data-inc="${p.id}" aria-label="Tambah">+</button></div>
+        <button class="add ${n ? 'in' : ''}" data-add="${p.id}" ${open ? '' : 'disabled'}>${open ? (n ? `✓ Di keranjang · ${fmtIDR(n * p.price)}` : `+ Keranjang · ${fmtIDR(qty * p.price)}`) : 'PO ditutup'}</button>
+      </div>
+    </div>`, 'detail');
+  sheet.dataset.pid = p.id;
+  sheet.classList.add('sheet-pd');
+  $('.sheet-in', sheet).scrollTop = 0; sheet.scrollTop = 0;
+  if (push) setProductParam(p.id);
+}
+sheet.addEventListener('close', () => { sheet.classList.remove('sheet-pd'); if (sheet.dataset.mode === 'detail') { sheet.dataset.mode = ''; setProductParam(''); } });
+window.addEventListener('popstate', () => {
+  const pid = new URLSearchParams(location.search).get('p');
+  if (pid) openDetail(pid, { push: false }); else if (sheet.open && sheet.dataset.mode === 'detail') sheet.close();
+});
 
 function openCart(errMsg = '') {
   const ls = lines();
@@ -285,9 +350,11 @@ function openMyOrders() {
 document.addEventListener('click', (e) => {
   const t = e.target;
   const ev = t.closest('[data-ev]'); if (ev) { const x = EVENTS.find((z) => z.id === ev.dataset.ev); if (x) setEvent(x); return; }
+  const op = t.closest('[data-open]'); if (op && !t.closest('[data-like]')) { openDetail(op.dataset.open); return; }
+  const bpd = t.closest('[data-brand-pd]'); if (bpd) { sheet.close(); brand = bpd.dataset.brandPd; renderBrands(); renderProducts(); document.getElementById('produk').scrollIntoView({ behavior: 'smooth' }); return; }
   const like = t.closest('[data-like]'); if (like) { const id = like.dataset.like; likes.has(id) ? likes.delete(id) : likes.add(id); store.set('kt-likes', [...likes]); like.textContent = likes.has(id) ? '♥' : '♡'; return; }
-  const inc = t.closest('[data-inc]'); if (inc) { const id = inc.dataset.inc; if (cart()[id]) setQty(id, cart()[id] + 1); else { pending[id] = Math.min(99, (pending[id] || 1) + 1); renderProducts(); } return; }
-  const dec = t.closest('[data-dec]'); if (dec) { const id = dec.dataset.dec; if (cart()[id]) setQty(id, cart()[id] - 1); else { pending[id] = Math.max(1, (pending[id] || 1) - 1); renderProducts(); } return; }
+  const inc = t.closest('[data-inc]'); if (inc) { const id = inc.dataset.inc; if (cart()[id]) setQty(id, cart()[id] + 1); else { pending[id] = Math.min(99, (pending[id] || 1) + 1); renderProducts(); if (sheet.open && sheet.dataset.mode === 'detail') openDetail(id, { push: false }); } return; }
+  const dec = t.closest('[data-dec]'); if (dec) { const id = dec.dataset.dec; if (cart()[id]) setQty(id, cart()[id] - 1); else { pending[id] = Math.max(1, (pending[id] || 1) - 1); renderProducts(); if (sheet.open && sheet.dataset.mode === 'detail') openDetail(id, { push: false }); } return; }
   const add = t.closest('[data-add]'); if (add) { const id = add.dataset.add; if (!cart()[id]) { setQty(id, pending[id] || 1); delete pending[id]; toast('Masuk keranjang ✓'); } else openCart(); return; }
   const ci = t.closest('[data-cinc]'); if (ci) return setQty(ci.dataset.cinc, (cart()[ci.dataset.cinc] || 0) + 1);
   const cd = t.closest('[data-cdec]'); if (cd) return setQty(cd.dataset.cdec, (cart()[cd.dataset.cdec] || 0) - 1);
@@ -295,7 +362,7 @@ document.addEventListener('click', (e) => {
   if (t.closest('[data-more]')) { $('#cats').classList.toggle('open'); return; }
   const b = t.closest('[data-brand]'); if (b) { brand = brand === b.dataset.brand ? '' : b.dataset.brand; renderBrands(); renderProducts(); document.getElementById('produk').scrollIntoView({ behavior: 'smooth' }); return; }
   const z = t.closest('[data-zoom]');
-  if (z && z.dataset.zoom && !t.closest('button')) { const lb = document.createElement('div'); lb.className = 'lightbox'; lb.innerHTML = `<img src="${esc(z.dataset.zoom)}" alt="">`; lb.onclick = () => lb.remove(); document.body.appendChild(lb); }
+  if (z && z.dataset.zoom && !t.closest('button')) { const lb = document.createElement('div'); lb.className = 'lightbox'; lb.innerHTML = `<img src="${esc(z.dataset.zoom)}" alt="">`; lb.onclick = () => lb.remove(); (sheet.open ? sheet : document.body).appendChild(lb); }
 });
 $('#searchForm').addEventListener('submit', (e) => { e.preventDefault(); query = $('#q').value; renderProducts(); document.getElementById('produk').scrollIntoView({ behavior: 'smooth' }); });
 let qt; $('#q').addEventListener('input', (e) => { clearTimeout(qt); qt = setTimeout(() => { query = e.target.value; renderProducts(); }, 200); });
