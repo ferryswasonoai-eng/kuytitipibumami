@@ -6,5 +6,5 @@ window.KT_CONFIG = {
   supabaseKey: 'sb_publishable_lyO2s8UewUmXqA2uCPWLlA_kra7091D',
   // Alamat web katalog buyer (dipakai untuk link katalog & link lacak pesanan di nota WA).
   // Bisa diganti owner dari menu Saya.
-  webUrl: 'https://ferryswasonoai-eng.github.io/kuytitipibumami/toko/',
+  webUrl: 'https://kuytitipibumami.pages.dev/',
 };

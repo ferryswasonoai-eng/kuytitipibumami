@@ -38,13 +38,14 @@ apa pun sampai owner memberinya peran.
    - **Shopper / packing**: daftar belanja, centang barang, status, foto struk (tanpa harga modal dan pembayaran)
 3. Admin tersebut menekan **Cek lagi**, lalu langsung masuk.
 
-## 5. Aktifkan web katalog untuk buyer
+## 5. Aktifkan web katalog untuk buyer (Cloudflare Pages, gratis)
 
-1. Di GitHub, buka repo → **Settings → Pages**.
-2. Pada Source pilih **Deploy from a branch**, branch **main**, folder **/ (root)**, lalu **Save**.
-3. Setelah sekitar 1–2 menit, web bisa dibuka di:
-   - Katalog + keranjang: `https://ferryswasonoai-eng.github.io/kuytitipibumami/toko/`
-   - Lacak pesanan: link otomatis ada di nota WhatsApp
+1. Di Cloudflare buka **Workers & Pages → Create**, lalu klik **Continue to Pages** di bagian bawah (jangan pilih Worker).
+2. **Import an existing Git repository** → repo `kuytitipibumami` → Framework **None**, Build command kosong,
+   Build output directory **`toko`** → **Save and Deploy**.
+3. Web aktif di (tanpa nama akun):
+   - Katalog + keranjang: `https://kuytitipibumami.pages.dev/` (per event: `?e=bkk`, per produk: `?e=bkk&p=<id>`)
+   - Lacak pesanan: `https://kuytitipibumami.pages.dev/lacak.html?...` — link otomatis ada di nota WhatsApp
 4. Bagikan link katalog di bio IG, WA Channel, atau grup.
 
 > Kalau web di-host di tempat lain (misalnya Render), ganti alamatnya di aplikasi:
