@@ -2453,6 +2453,23 @@ async function imgDataUrl(src) {
   try { const b = await (await fetch(src)).blob(); return await new Promise((r) => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.onerror = () => r(''); fr.readAsDataURL(b); }); } catch (e) { return ''; }
 }
 const nfmt = (n) => Math.round(num(n)).toLocaleString('id-ID');
+// foto barang → JPEG kecil persegi untuk PDF (lokal dulu, lalu server)
+async function pdfThumb(id, size = 240) {
+  if (!id) return '';
+  try {
+    let src = photoCache.get(id);
+    if (!src && !/^https?:|^data:/.test(id)) { const ph = await DB.get('photos', id); if (ph && ph.data) src = ph.data; }
+    if (!src) src = photoUrl(id);
+    const blob = await (await fetch(src)).blob();
+    const bmp = await createImageBitmap(blob);
+    const c = document.createElement('canvas'); c.width = c.height = size;
+    const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, size, size);
+    const k = Math.max(size / bmp.width, size / bmp.height);  // isi penuh (crop tengah)
+    const w = bmp.width * k, h = bmp.height * k;
+    g.drawImage(bmp, (size - w) / 2, (size - h) / 2, w, h);
+    return c.toDataURL('image/jpeg', 0.78);
+  } catch (e) { return ''; }
+}
 // font PDF standar hanya mendukung huruf Latin — buang emoji & karakter lain agar tidak jadi simbol aneh
 const pdfTxt = (x) => String(x ?? '').replace(/[\u2018\u2019]/g, "'").replace(/[\u201C\u201D]/g, '"').replace(/[^\x09\x0A\x20-\xFF\u2013\u2014\u2026\u2022]/gu, '').replace(/[ \t]+$/gm, '').trim();
 async function buildInvoicePDF(o, cu, pays) {
@@ -2503,14 +2520,21 @@ async function buildInvoicePDF(o, cu, pays) {
   y += 8;
   doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5);
   const items = (o.items || []).filter((it) => it.name || num(it.qty));
+  const thumbs = await Promise.all(items.map((it) => pdfThumb((it.photos && it.photos[0]) || it.productPhoto)));
+  const withPh = thumbs.some(Boolean);
+  const TH = 16;  // ukuran foto (mm)
   items.forEach((it, i) => {
     const unit = itemSellIDR(it); const q = num(it.qty);
-    const name = doc.splitTextToSize(pdfTxt(it.name + (it.note ? ` (${it.note})` : '')) || '-', cols[1].w - 5);
-    const h = Math.max(7.5, name.length * 4.4 + 3.2);
+    const tx = withPh ? TH + 4 : 0;
+    const name = doc.splitTextToSize(pdfTxt(it.name + (it.note ? ` (${it.note})` : '')) || '-', cols[1].w - 5 - tx);
+    const h = Math.max(withPh ? TH + 3 : 7.5, name.length * 4.4 + 3.2);
     if (y + h > 270) { doc.addPage(); y = M; }
     rowLines(y, h); doc.setTextColor(...INK);
-    cellText(String(i + 1), 0, y + 5); doc.text(name, xs[1] + 2.5, y + 5); cellText(String(q), 2, y + 5);
-    cellText(nfmt(unit), 3, y + 5); cellText(nfmt(unit * q), 4, y + 5);
+    const ty = withPh ? y + h / 2 + 1.3 - (name.length - 1) * 2.2 : y + 5;
+    if (thumbs[i]) doc.addImage(thumbs[i], 'JPEG', xs[1] + 1.5, y + (h - TH) / 2, TH, TH);
+    else if (withPh) { doc.setDrawColor(...LINE); doc.setFillColor(246, 247, 249); doc.rect(xs[1] + 1.5, y + (h - TH) / 2, TH, TH, 'FD'); }
+    cellText(String(i + 1), 0, withPh ? y + h / 2 + 1.3 : ty); doc.text(name, xs[1] + 2.5 + tx, ty); cellText(String(q), 2, withPh ? y + h / 2 + 1.3 : ty);
+    cellText(nfmt(unit), 3, withPh ? y + h / 2 + 1.3 : ty); cellText(nfmt(unit * q), 4, withPh ? y + h / 2 + 1.3 : ty);
     y += h;
   });
   // ringkasan
