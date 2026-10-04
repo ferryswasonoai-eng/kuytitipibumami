@@ -416,3 +416,4 @@ input[type=date].input { -webkit-appearance: none; appearance: none; width: 100%
 .brand-logo { width: 44px; height: 44px; flex-shrink: 0; object-fit: contain; filter: drop-shadow(0 6px 10px rgba(238,74,62,.3)); }
 @media (max-width: 400px) { .brand-logo { width: 40px; height: 40px; } }
 .auth-logo-img { width: 112px; height: 112px; display: block; margin: 0 auto 14px; filter: drop-shadow(0 14px 22px rgba(238,74,62,.35)); }
+.input.autofilled { border-color: var(--ok, #17915f); box-shadow: 0 0 0 3px rgba(23,145,95,.18); transition: box-shadow .3s; }

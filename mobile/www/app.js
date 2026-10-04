@@ -622,11 +622,13 @@ function finalizeOrder(o) {
 
 /* Rerender saat ada perubahan dari admin lain */
 let FORM_OPEN = false;
+let FORM_DIRTY = false;  // ada isian yang belum disimpan → jangan gambar ulang layar
+const inForm = () => FORM_OPEN || FORM_DIRTY || (document.activeElement && view.contains(document.activeElement) && document.activeElement.matches('input, textarea, select'));
 async function onDataChanged() {
   await loadEvents();
   updateBadge();
   renderChrome();
-  if (FORM_OPEN) { toast('Ada perubahan dari admin lain'); return; }
+  if (inForm()) { if (!onDataChanged._told) { onDataChanged._told = true; toast('Ada data baru dari admin lain — tampil setelah Anda selesai'); setTimeout(() => { onDataChanged._told = false; }, 20000); } return; }
   if (sheet.open || !ME || document.body.classList.contains('noauth')) return;
   clearTimeout(onDataChanged._t);
   onDataChanged._t = setTimeout(() => {
@@ -1967,6 +1969,95 @@ async function viewProducts() {
   const sc = $('#shareCat'); if (sc) sc.onclick = () => { const e = evById(evP) || curEv(); shareText('Katalog ' + S.business, `${e ? `${e.title} ${e.name}${e.poStart || e.poEnd ? ' (' + fmtRangeD(e.poStart, e.poEnd) + ')' : ''}` : 'Katalog jastip'} — ${S.business}\n${webBase()}${e ? '?e=' + encodeURIComponent(e.code.toLowerCase()) : ''}`); };
 }
 
+/* ================= Tempel teks produk dari WhatsApp ================= */
+function parseProductText(text, opt = {}) {
+  const brands = (opt.brands || []).filter(Boolean);
+  const cats = (opt.categories || []).map((c) => c.name);
+  const CUR = [['THB', /฿|\bthb\b|\bbaht\b/i], ['AUD', /a\$|\baud\b/i], ['JPY', /¥|\byen\b|\bjpy\b/i], ['SGD', /s\$|\bsgd\b/i], ['MYR', /\brm\b|\bmyr\b|\bringgit\b/i], ['KRW', /₩|\bkrw\b|\bwon\b/i], ['USD', /us\$|\busd\b/i], ['HKD', /hk\$|\bhkd\b/i], ['EUR', /€|\beur\b/i], ['GBP', /£|\bgbp\b/i]];
+  const curOf = (s) => (CUR.find(([, re]) => re.test(s)) || [])[0] || '';
+  const amount = (s) => {
+    // ambil angka pertama; dukung 155.000 · 155,5 · 155k · 155rb · 1,2jt · 1.2 juta
+    const m = String(s).match(/(\d[\d.,]*)\s*(jt|juta|k|rb|ribu)?\b/i);
+    if (!m) return 0;
+    let raw = m[1]; const unit = (m[2] || '').toLowerCase();
+    let v;
+    if (/^\d{1,3}([.,]\d{3})+$/.test(raw)) v = Number(raw.replace(/[.,]/g, ''));
+    else v = Number(raw.replace(',', '.'));
+    if (!isFinite(v)) return 0;
+    if (unit === 'k' || unit === 'rb' || unit === 'ribu') v *= 1000;
+    if (unit === 'jt' || unit === 'juta') v *= 1000000;
+    return Math.round(v * 100) / 100;
+  };
+  const isIdrPrice = (s) => /\brp\.?\s*\d|\d\s*(k|rb|ribu|jt|juta)\b|\bidr\b/i.test(s);
+  const weightOf = (s) => { const m = s.match(/(\d[\d.,]*)\s*(kg|kilo|gram|gr|g)\b/i); if (!m) return 0; let v = Number(m[1].replace(',', '.')); if (/^k/i.test(m[2])) v *= 1000; return Math.round(v); };
+  const out = { fields: {} };
+  const F = out.fields;
+  const desc = [];
+  let inDesc = false;
+  const lines = String(text || '').replace(/\r/g, '').split('\n').map((l) => l.replace(/[*_~`]/g, '').replace(/\s+$/, ''));
+  const KEYS = [
+    ['name', /^(nama( produk| barang)?|produk|item|barang)$/i],
+    ['brand', /^(brand|merk|merek|toko)$/i],
+    ['buy', /^(harga beli|modal|beli|harga toko|harga asli|harga normal)$/i],
+    ['sell', /^(harga jual|harga jastip|harga|hrg|price|jual)$/i],
+    ['weight', /^(berat|weight|bobot)$/i],
+    ['category', /^(kategori|category|jenis)$/i],
+    ['desc', /^(deskripsi|desc|keterangan|ket|detail|info|catatan)$/i],
+  ];
+  for (const line0 of lines) {
+    const line = line0.trim().replace(/^[•\-–·▪️🔸🔹✅✨📌👉]+\s*/u, '');
+    if (!line) { if (inDesc || desc.length) desc.push(''); continue; }
+    const kv = line.match(/^([A-Za-z][A-Za-z ]{1,20}?)\s*[:=]\s*(.*)$/);
+    const key = kv ? (KEYS.find(([, re]) => re.test(kv[1].trim())) || [])[0] : '';
+    if (key) {
+      const v = kv[2].trim();
+      inDesc = false;
+      if (key === 'name') F.name = v;
+      else if (key === 'brand') F.brand = v;
+      else if (key === 'weight') F.weight = weightOf(v) || amount(v) || '';
+      else if (key === 'category') F.category = cats.find((c) => c.toLowerCase() === v.toLowerCase()) || cats.find((c) => c.toLowerCase().includes(v.toLowerCase()) || v.toLowerCase().includes(c.toLowerCase())) || v;
+      else if (key === 'desc') { inDesc = true; if (v) desc.push(v); }
+      else if (key === 'buy' || key === 'sell') {
+        const c = curOf(v);
+        if (c && c !== 'IDR') { F.buyPrice = amount(v); F.buyCur = c; }
+        else if (key === 'buy') { F.buyPrice = amount(v); if (isIdrPrice(v)) F.buyCur = 'IDR'; }
+        else F.sellPrice = amount(v);
+      }
+      continue;
+    }
+    if (inDesc) { desc.push(line0.trim()); continue; }
+    // baris tanpa label
+    if (F.sellPrice == null && isIdrPrice(line) && line.length < 40) { F.sellPrice = amount(line.replace(/^.*?(rp\.?)/i, '$1')); continue; }
+    const c = curOf(line);
+    if (F.buyPrice == null && c && /\d/.test(line) && line.length < 40) { F.buyPrice = amount(line); F.buyCur = c; continue; }
+    if (F.weight == null && /^((berat|weight|bobot)\s+)?(\d[\d.,]*)\s*(kg|kilo|gram|gr|g)\b/i.test(line) && line.length < 30) { F.weight = weightOf(line); continue; }
+    if (!F.name) { F.name = line; continue; }
+    desc.push(line0.trim());
+  }
+  // brand dari awal nama bila cocok dengan brand yang sudah ada
+  if (!F.brand && F.name) {
+    const b = brands.slice().sort((a, b2) => b2.length - a.length).find((x) => F.name.toLowerCase().startsWith(x.toLowerCase() + ' ') || F.name.toLowerCase() === x.toLowerCase());
+    if (b) F.brand = b;
+  }
+  if (!F.category && cats.length) {
+    const hay = (F.name + ' ' + desc.join(' ')).toLowerCase();
+    const hit = [['Skincare', /serum|toner|lotion|moistur|cream|krim|sunscreen|spf|cleanser|facial|masker|mask|skincare/], ['Parfum', /parfum|perfume|edp|edt|cologne/], ['Sepatu', /sepatu|shoes|sneaker|sandal/], ['Tas & Aksesori', /\btas\b|bag|dompet|wallet|pouch/], ['Vitamin & Suplemen', /vitamin|suplemen|supplement|fish oil|kapsul|capsule/], ['Makanan & Snack', /snack|cokelat|coklat|chocolate|biskuit|keripik|permen|candy/], ['Fashion', /kaos|baju|shirt|dress|jaket|jacket|hoodie|celana/]].find(([n, re]) => cats.includes(n) && re.test(hay));
+    if (hit) F.category = hit[0];
+  }
+  while (desc.length && !desc[0]) desc.shift();
+  while (desc.length && !desc[desc.length - 1]) desc.pop();
+  if (desc.length) F.description = desc.join('\n').replace(/\n{3,}/g, '\n\n');
+  Object.keys(F).forEach((k) => { if (F[k] == null || F[k] === '' || F[k] === 0) delete F[k]; });
+  return F;
+}
+
+const Draft = {
+  key: (k) => 'kt-draft:' + k,
+  get(k) { try { return JSON.parse(localStorage.getItem(this.key(k)) || 'null'); } catch (e) { return null; } },
+  set(k, v) { try { localStorage.setItem(this.key(k), JSON.stringify({ ...v, at: Date.now() })); } catch (e) { /* penuh / tidak tersedia */ } },
+  del(k) { try { localStorage.removeItem(this.key(k)); } catch (e) { /* abaikan */ } },
+};
+
 async function viewProductForm(id) {
   setTab('produk');
   let p = id ? await DB.get('products', id) : null;
@@ -1977,10 +2068,19 @@ async function viewProductForm(id) {
     category: viewProducts.cat || '', events: ev0 ? [ev0.id] : [], badge: '', featured: false };
   const pEv = () => evById(p.events[0]) || curEv();
   const brands = [...new Set((await DB.all('products')).map((x) => x.brand).filter(Boolean))].sort();
+  // draf: isian tetap aman walau pindah ke WhatsApp / kamera atau aplikasi ditutup sistem
+  const dKey = 'product:' + (id || 'new');
+  const draft = ro ? null : Draft.get(dKey);
+  if (draft) {
+    if (!id && draft.id) p.id = draft.id;
+    Object.assign(p, draft.p || {});
+  }
   view.innerHTML = `
     <button class="back" onclick="location.hash='#/produk'">‹ Produk</button>
     <p class="eyebrow">${id ? (ro ? 'Produk' : 'Ubah produk') : 'Produk baru'}</p>
     <h1 class="page-title">${esc(p.name || 'Produk baru')}</h1>
+    ${draft ? `<div class="alert warn" id="draftBar" style="display:flex;align-items:center;gap:10px;justify-content:space-between;margin-bottom:12px"><span>📝 Isian yang belum disimpan dipulihkan.</span><button class="btn sm" type="button" id="draftDrop">Buang</button></div>` : ''}
+    ${ro ? '' : `<button class="btn" type="button" id="pPaste" style="margin-bottom:12px">📋 Tempel teks dari WhatsApp — isi otomatis</button>`}
     <fieldset ${ro ? 'disabled' : ''} style="border:0;padding:0;margin:0;min-width:0">
     <section class="card">
       <div class="field"><label>Foto</label><div class="photos" id="pPhoto"></div></div>
@@ -2028,11 +2128,45 @@ async function viewProductForm(id) {
   ensureRate(p.buyCur || 'THB').then(() => $('#pHelp') && help());
   view.onclick = (e) => { const z = e.target.closest('[data-zoom]'); if (z && z.src && !e.target.closest('[data-rm-photo]')) openLightbox(z.src); };
   if (ro) return;
-  $('#pPhoto').onchange = async (e) => { if (e.target.dataset.addPhoto) { const ids = await savePhotos([e.target.files[0]]); p.photo = ids[0]; drawPhoto(); } };
-  $('#pPhoto').addEventListener('click', (e) => { const rm = e.target.closest('[data-rm-photo]'); if (rm) { e.preventDefault(); p.photo = ''; drawPhoto(); } });
+  if (draft) FORM_DIRTY = true;
+  const readForm = () => ({ name: $('#pName').value, brand: $('#pBrand').value, weight: $('#pWeight').value, description: $('#pDesc').value, buyPrice: $('#pBuy') ? $('#pBuy').value : p.buyPrice, buyCur: $('#pCur') ? $('#pCur').value : p.buyCur,
+    sellPrice: $('#pSell').value, note: $('#pNote') ? $('#pNote').value : p.note, published: $('#pPub').checked, category: $('#pCat').value, badge: $('#pBadge').value, featured: $('#pFeat').checked, photo: p.photo, events: p.events });
+  const saveDraft = () => { clearTimeout(saveDraft._t); saveDraft._t = setTimeout(() => { if ($('#pName')) Draft.set(dKey, { id: p.id, p: readForm() }); }, 250); };
+  const fs = $('fieldset', view); fs.addEventListener('input', saveDraft); fs.addEventListener('change', saveDraft);
+  const dd = $('#draftDrop'); if (dd) dd.onclick = () => { Draft.del(dKey); FORM_DIRTY = false; route(); };
+  $('#pPhoto').onchange = async (e) => { if (e.target.dataset.addPhoto) { FORM_DIRTY = true; const ids = await savePhotos([e.target.files[0]]); p.photo = ids[0]; drawPhoto(); saveDraft(); } };
+  $('#pPhoto').addEventListener('click', (e) => { const rm = e.target.closest('[data-rm-photo]'); if (rm) { e.preventDefault(); p.photo = ''; drawPhoto(); saveDraft(); } });
   $$('[data-pev]').forEach((b) => b.onclick = () => {
     const id = b.dataset.pev; p.events = p.events.includes(id) ? p.events.filter((x) => x !== id) : [...p.events, id];
-    b.classList.toggle('on', p.events.includes(id));
+    b.classList.toggle('on', p.events.includes(id)); FORM_DIRTY = true; saveDraft();
+  });
+  $('#pPaste').onclick = () => openSheet(`<h3>Tempel teks produk</h3>
+    <p class="hint">Salin pesan/catatan produk dari WhatsApp, lalu tempel di sini. Nama, brand, harga, berat, kategori & deskripsi diisi otomatis — cek lagi sebelum menyimpan.</p>
+    <textarea class="input" id="pasteTxt" rows="9" placeholder="Contoh:&#10;TOFU Precious Moisturizing 500ml&#10;Harga: Rp 155.000&#10;Harga beli: 390 THB&#10;Berat: 550 gr&#10;Body lotion niacinamide…"></textarea>
+    <div class="btn-col" style="margin-top:12px">
+      <button class="btn" type="button" id="pasteClip">📋 Tempel dari clipboard</button>
+      <button class="btn primary" type="button" id="pasteGo">Isi formulir</button>
+      <button class="btn ghost" type="button" data-close>Batal</button></div>`, (sh) => {
+    $('[data-close]', sh).onclick = closeSheet;
+    $('#pasteClip', sh).onclick = async () => {
+      try { const t = await navigator.clipboard.readText(); if (t) $('#pasteTxt', sh).value = t; else toast('Clipboard kosong'); }
+      catch (e) { toast('Tekan lama kolom teks lalu pilih Tempel'); $('#pasteTxt', sh).focus(); }
+    };
+    $('#pasteGo', sh).onclick = () => {
+      const f = parseProductText($('#pasteTxt', sh).value, { brands, categories: categories() });
+      const set = (sel, v) => { const el = $(sel); if (!el || v == null || v === '') return 0; el.value = v; el.classList.add('autofilled'); setTimeout(() => el.classList.remove('autofilled'), 2500); return 1; };
+      let n = 0;
+      n += set('#pName', f.name); n += set('#pBrand', f.brand); n += set('#pDesc', f.description);
+      n += set('#pWeight', f.weight); n += set('#pSell', f.sellPrice);
+      if (f.category) { if (![...$('#pCat').options].some((o) => o.value === f.category)) $('#pCat').insertAdjacentHTML('beforeend', `<option>${esc(f.category)}</option>`); n += set('#pCat', f.category); }
+      if ($('#pBuy')) { n += set('#pBuy', f.buyPrice); if (f.buyCur && [...$('#pCur').options].some((o) => o.value === f.buyCur)) { $('#pCur').value = f.buyCur; ensureRate(f.buyCur).then(help); } }
+      formatMoneyInputs(view); help();
+      closeSheet();
+      FORM_DIRTY = true; saveDraft();
+      $('.page-title').textContent = $('#pName').value || 'Produk baru';
+      toast(n ? `${n} kolom terisi otomatis — cek lagi sebelum simpan` : 'Tidak ada yang bisa dibaca — isi manual ya');
+    };
+    setTimeout(() => $('#pasteTxt', sh).focus(), 100);
   });
   $('#pBuy').oninput = help;
   $('#pCur').onchange = async () => { await ensureRate($('#pCur').value); help(); };
@@ -2049,6 +2183,7 @@ async function viewProductForm(id) {
     Object.assign(p, { name, brand: $('#pBrand').value.trim(), weight: $('#pWeight').value, description: $('#pDesc').value.trim(), buyPrice: $('#pBuy').value, buyCur: $('#pCur').value, sellPrice: $('#pSell').value, note: $('#pNote').value, published: $('#pPub').checked,
       category: $('#pCat').value, badge: $('#pBadge').value, featured: $('#pFeat').checked });
     await saveRow('products', p);
+    Draft.del(dKey); FORM_DIRTY = false;
     toast('Produk disimpan ✓'); location.hash = '#/produk';
   };
   const po = $('#pOrder');
@@ -2060,7 +2195,7 @@ async function viewProductForm(id) {
     shareText(p.name, `${ev ? `${ev.flag || ''} ${ev.title} ${ev.name}\n` : ''}*${p.name}*${p.brand ? ' (' + p.brand + ')' : ''}${price}\n${webBase()}?${ev ? 'e=' + encodeURIComponent((ev.code || '').toLowerCase()) + '&' : ''}p=${encodeURIComponent(p.id)}`);
   };
   const pd = $('#pDel');
-  if (pd) pd.onclick = async () => { if (!(await confirmSheet(`Hapus produk "${p.name}"?`, 'Hapus'))) return; await removeRow('products', p); toast('Produk dihapus'); location.hash = '#/produk'; };
+  if (pd) pd.onclick = async () => { if (!(await confirmSheet(`Hapus produk "${p.name}"?`, 'Hapus'))) return; await removeRow('products', p); Draft.del(dKey); FORM_DIRTY = false; toast('Produk dihapus'); location.hash = '#/produk'; };
 }
 
 /* ================= Views: Customer ================= */
@@ -2354,7 +2489,7 @@ const TAB_ROOTS = ['#/beranda', '#/pesanan', '#/produk', '#/customer', '#/saya']
 async function route(opts = {}) {
   if (!ME || !['owner', 'order', 'shopper'].includes(ME.role)) return;
   if (!opts.keepScroll) closeSheet();
-  FORM_OPEN = false;
+  FORM_OPEN = false; FORM_DIRTY = false;
   view.onclick = null;
   const full = location.hash || '#/beranda';
   const [h, qs] = full.split('?');
@@ -2377,6 +2512,7 @@ async function boot() {
   renderChrome();
   window.addEventListener('hashchange', () => route());
   document.addEventListener('input', (e) => { if (e.target.matches && e.target.matches('input[data-money]')) formatMoneyLive(e.target); }, true);
+  ['input', 'change'].forEach((t) => view.addEventListener(t, (e) => { if (e.target.matches && e.target.matches('input, textarea, select')) FORM_DIRTY = true; }));
   $('#syncBtn').onclick = async () => {
     if (Sync.failed || Sync.lastError) { location.hash = '#/saya'; return; }
     toast('Menyinkronkan…'); await Sync.sync();
