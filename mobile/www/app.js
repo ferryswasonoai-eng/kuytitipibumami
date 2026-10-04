@@ -1792,7 +1792,7 @@ async function viewOrderDetail(id) {
     ${o.note ? `<section class="card"><h2>Catatan</h2><p style="white-space:pre-wrap;margin:0">${esc(o.note)}</p></section>` : ''}
 
     <div class="btn-col">
-      ${isShopper() ? '' : '<button class="btn wa" id="sendWA">Kirim nota ke WhatsApp</button><button class="btn" id="shareNota">Bagikan / salin nota</button>'}
+      ${isShopper() ? '' : '<button class="btn wa" id="sendWA">Kirim nota ke WhatsApp</button><button class="btn wa-outline" id="sendInv">📄 Kirim invoice PDF via WhatsApp</button><button class="btn" id="shareNota">Bagikan / salin nota</button>'}
       ${link ? '<button class="btn" id="copyTrack">Bagikan link lacak pesanan</button>' : ''}
       ${canSell() ? `<a class="btn" href="#/pesanan/${o.id}/edit">Ubah pesanan</a>` : ''}
       ${isOwner() ? '<button class="btn danger" id="delOrder">Hapus pesanan</button>' : ''}
@@ -1831,6 +1831,7 @@ async function viewOrderDetail(id) {
   };
   on('#sendWA', () => cu?.phone ? openWA(cu.phone, buildNota(o, cu, paid)) : toast('Nomor WA customer belum diisi'));
   on('#shareNota', () => shareText('Nota #' + o.code, buildNota(o, cu, paid)));
+  on('#sendInv', () => sendInvoice(o, cu, pays));
   on('#copyTrack', () => shareText('Lacak pesanan #' + o.code, link));
   on('#delOrder', async () => {
     if (!(await confirmSheet(`Hapus pesanan #${o.code}?`, 'Hapus'))) return;
@@ -1957,7 +1958,8 @@ async function viewProducts() {
         <div style="flex:1;min-width:0"><div class="title">${esc(p.name)}</div>
           <div class="sub">${(p.events || []).map((id) => esc(evById(id)?.flag || '')).join('')} ${p.brand ? esc(p.brand) : ''}${p.category ? ' · ' + esc(p.category) : ''}${num(p.buyPrice) && !isShopper() ? ' · beli ' + fmtCur(p.buyPrice, p.buyCur) : ''}${p.published === false ? ' · <b>tersembunyi</b>' : ''}</div>
           ${p.badge || p.featured ? `<div style="margin-top:4px">${p.badge ? `<span class="badge st-menunggu">${esc(p.badge)}</span> ` : ''}${p.featured ? '<span class="badge pay-lunas">Pilihan</span>' : ''}</div>` : ''}</div>
-        <div class="amount">${num(p.sellPrice) ? fmtIDR(p.sellPrice) : ''}</div></a>`).join('')
+        <div class="amount">${num(p.sellPrice) ? fmtIDR(p.sellPrice) : ''}</div>
+        ${webBase() && p.published !== false && num(p.sellPrice) ? `<button class="share-mini" type="button" data-share-prod="${p.id}" aria-label="Bagikan link produk">🔗</button>` : ''}</a>`).join('')
     : `<div class="empty"><div class="big">📦</div>Belum ada produk.</div>`}
     ${canSell() ? `<button class="fab" aria-label="Produk baru" onclick="location.hash='#/produk/baru'">+</button>` : ''}`;
   await hydratePhotos();
@@ -1966,7 +1968,15 @@ async function viewProducts() {
   $$('[data-brand]').forEach((b) => b.onclick = () => { viewProducts.brand = b.dataset.brand; viewProducts(); });
   $$('[data-cat]').forEach((b) => b.onclick = () => { viewProducts.cat = b.dataset.cat; viewProducts(); });
   $$('[data-evp]').forEach((b) => b.onclick = () => { viewProducts.ev = b.dataset.evp; viewProducts.cat = ''; viewProducts.brand = ''; viewProducts(); });
+  view.onclick = async (e) => { const b = e.target.closest('[data-share-prod]'); if (!b) return; e.preventDefault(); e.stopPropagation(); const p = await DB.get('products', b.dataset.shareProd); if (p) shareProduct(p, evP); };
   const sc = $('#shareCat'); if (sc) sc.onclick = () => { const e = evById(evP) || curEv(); shareText('Katalog ' + S.business, `${e ? `${e.title} ${e.name}${e.poStart || e.poEnd ? ' (' + fmtRangeD(e.poStart, e.poEnd) + ')' : ''}` : 'Katalog jastip'} — ${S.business}\n${webBase()}${e ? '?e=' + encodeURIComponent(e.code.toLowerCase()) : ''}`); };
+}
+
+function shareProduct(p, evHint) {
+  const ev = (p.events || []).length ? (evHint && p.events.includes(evHint) ? evById(evHint) : evById(p.events[0])) : (evById(evHint) || curEv());
+  const price = num(p.sellPrice) ? ' — ' + fmtIDR(p.sellPrice) : '';
+  const desc = (p.description || '').split('\n').filter(Boolean).slice(0, 3).join('\n');
+  shareText(p.name, `${ev ? `${ev.flag || ''} ${ev.title} ${ev.name}\n` : ''}*${p.name}*${p.brand ? ' (' + p.brand + ')' : ''}${price}${desc ? '\n' + desc : ''}\n\nLihat & pesan: ${webBase()}?${ev ? 'e=' + encodeURIComponent((ev.code || '').toLowerCase()) + '&' : ''}p=${encodeURIComponent(p.id)}`);
 }
 
 /* ================= Tempel teks produk dari WhatsApp ================= */
@@ -2189,11 +2199,7 @@ async function viewProductForm(id) {
   const po = $('#pOrder');
   if (po) po.onclick = () => { viewOrderForm.openPicker = true; location.hash = '#/pesanan/baru'; };
   const psh = $('#pShare');
-  if (psh) psh.onclick = () => {
-    const ev = (p.events || []).length ? (evById(viewProducts.ev) && p.events.includes(viewProducts.ev) ? evById(viewProducts.ev) : evById(p.events[0])) : curEv();
-    const price = p.sellPrice ? ' — ' + fmtIDR(p.sellPrice) : '';
-    shareText(p.name, `${ev ? `${ev.flag || ''} ${ev.title} ${ev.name}\n` : ''}*${p.name}*${p.brand ? ' (' + p.brand + ')' : ''}${price}\n${webBase()}?${ev ? 'e=' + encodeURIComponent((ev.code || '').toLowerCase()) + '&' : ''}p=${encodeURIComponent(p.id)}`);
-  };
+  if (psh) psh.onclick = () => shareProduct({ ...p, ...readForm() }, viewProducts.ev);
   const pd = $('#pDel');
   if (pd) pd.onclick = async () => { if (!(await confirmSheet(`Hapus produk "${p.name}"?`, 'Hapus'))) return; await removeRow('products', p); Draft.del(dKey); FORM_DIRTY = false; toast('Produk dihapus'); location.hash = '#/produk'; };
 }
@@ -2343,6 +2349,7 @@ async function viewSettings() {
       <div class="field"><label>Nama usaha</label><input class="input" id="sBiz" value="${esc(S.business)}"></div>
       <div class="field"><label>No. WhatsApp usaha (penerima order web)</label><input class="input" id="sWa" inputmode="tel" value="${esc(S.ownerWa ? fmtPhone(S.ownerWa) : '')}"></div>
       <div class="field"><label>Link web buyer</label><input class="input" id="sWeb" value="${esc(S.webUrl)}"></div>
+      <div class="field"><label>Info pembayaran di invoice PDF</label><textarea class="input" id="sInv" rows="3" placeholder="mis. Transfer BCA 1234567890 a.n. Nama Anda&#10;Konfirmasi pembayaran via WhatsApp">${esc(S.invoiceNote || '')}</textarea></div>
     </section>
 
     <section class="card">
@@ -2411,7 +2418,7 @@ async function viewSettings() {
   on('#sSave', async () => {
     Object.assign(S, {
       business: $('#sBiz').value.trim() || 'KuyTitip', ownerWa: normPhone($('#sWa').value),
-      webUrl: $('#sWeb').value.trim(), template: $('#sTpl').value || DEFAULT_TEMPLATE,
+      webUrl: $('#sWeb').value.trim(), invoiceNote: $('#sInv').value.trim(), template: $('#sTpl').value || DEFAULT_TEMPLATE,
       categories: $('#sCats').value.split('\n').map((l) => l.trim()).filter(Boolean).map((l) => {
         const m = l.match(/^(\p{Extended_Pictographic}[\u{FE0F}\u{200D}\p{Extended_Pictographic}]*)\s*(.+)$/u);
         return m ? { icon: m[1], name: m[2].trim() } : { icon: '🛍️', name: l };
@@ -2430,6 +2437,147 @@ async function showLog() {
       $('#logList', s).innerHTML = data.map((l) => `<div class="log-row"><b>${esc(l.admin_name || '—')}</b> · ${esc(l.action)} <b>${esc(l.ref_label || '')}</b>${l.detail ? ` · ${esc(l.detail)}` : ''}<div class="muted small">${fmtDateTime(Date.parse(l.at))}</div></div>`).join('') || '<p class="muted">Belum ada aktivitas.</p>';
     } catch (e) { $('#logList', s).innerHTML = `<p class="muted">Butuh internet untuk melihat log. (${esc(e.message || e)})</p>`; }
   });
+}
+
+/* ================= Invoice PDF ================= */
+let _jspdf;
+function loadJsPDF() {
+  if (window.jspdf) return Promise.resolve(window.jspdf);
+  return _jspdf ||= new Promise((res, rej) => {
+    const sc = document.createElement('script'); sc.src = 'vendor/jspdf.umd.min.js';
+    sc.onload = () => res(window.jspdf); sc.onerror = () => { _jspdf = null; rej(new Error('Modul PDF gagal dimuat')); };
+    document.head.appendChild(sc);
+  });
+}
+async function imgDataUrl(src) {
+  try { const b = await (await fetch(src)).blob(); return await new Promise((r) => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.onerror = () => r(''); fr.readAsDataURL(b); }); } catch (e) { return ''; }
+}
+const nfmt = (n) => Math.round(num(n)).toLocaleString('id-ID');
+// font PDF standar hanya mendukung huruf Latin — buang emoji & karakter lain agar tidak jadi simbol aneh
+const pdfTxt = (x) => String(x ?? '').replace(/[\u2018\u2019]/g, "'").replace(/[\u201C\u201D]/g, '"').replace(/[^\x09\x0A\x20-\xFF\u2013\u2014\u2026\u2022]/gu, '').replace(/[ \t]+$/gm, '').trim();
+async function buildInvoicePDF(o, cu, pays) {
+  const { jsPDF } = await loadJsPDF();
+  const paid = pays.reduce((a, p) => a + num(p.amount), 0);
+  const t = orderTotals(o, paid);
+  const ev = evById(o.eventId);
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  const W = 210, M = 14, CW = W - M * 2;
+  const RED = [239, 59, 45], INK = [22, 26, 38], GREY = [110, 116, 130], LINE = [190, 196, 206];
+  const HEAD = [220, 230, 242], GREEN = [207, 232, 200];
+  let y = M;
+  // header
+  const logo = await imgDataUrl('logo.png');
+  if (logo) doc.addImage(logo, 'PNG', M, y, 18, 18);
+  const lx = logo ? M + 22 : M;
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.setTextColor(...INK); doc.text(pdfTxt(S.business || 'KuyTitip'), lx, y + 7);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(...GREY);
+  doc.text('Jastip ori · langsung dari tokonya', lx, y + 12);
+  if (S.ownerWa) doc.text('WhatsApp ' + fmtPhone(S.ownerWa), lx, y + 16.5);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(22); doc.setTextColor(...RED); doc.text('INVOICE', W - M, y + 8, { align: 'right' });
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...GREY);
+  doc.text('No. ' + o.code, W - M, y + 13.5, { align: 'right' });
+  doc.text(new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }), W - M, y + 18, { align: 'right' });
+  y += 24;
+  doc.setDrawColor(...RED); doc.setLineWidth(0.8); doc.line(M, y, W - M, y);
+  y += 7;
+  // info pelanggan & pesanan
+  const col2 = M + CW / 2 + 4;
+  const kv = (x, yy, k, v, bold) => { doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(...GREY); doc.text(k, x, yy); doc.setFont('helvetica', bold ? 'bold' : 'normal'); doc.setFontSize(10.5); doc.setTextColor(...INK); doc.text(String(v || '-'), x + 26, yy); };
+  kv(M, y, 'Nama', pdfTxt(cu?.name), true); kv(col2, y, 'No. Order', o.code, true); y += 6;
+  kv(M, y, 'No. Telp', cu?.phone ? fmtPhone(cu.phone) : '-'); kv(col2, y, 'Tgl. Order', fmtDate(o.createdAt)); y += 6;
+  const addr = [cu?.address, cu?.city].filter(Boolean).join(', ');
+  if (addr) { const a = doc.splitTextToSize(pdfTxt(addr), CW / 2 - 30); kv(M, y, 'Alamat', a[0]); }
+  kv(col2, y, 'Event', pdfTxt(ev ? `Jastip ${ev.name}` : (o.trip || '-'))); y += 9;
+  // tabel barang
+  const cols = [{ h: 'NO', w: 12, a: 'center' }, { h: 'NAMA ITEM', w: 86, a: 'left' }, { h: 'JUMLAH', w: 22, a: 'center' }, { h: 'HARGA', w: 31, a: 'right' }, { h: 'TOTAL HARGA', w: CW - 151, a: 'right' }];
+  const xs = []; cols.reduce((x, c) => { xs.push(x); return x + c.w; }, M);
+  const cellText = (txt, i, yy, opts = {}) => {
+    const c = cols[i]; const pad = 2.5;
+    const x = c.a === 'right' ? xs[i] + c.w - pad : c.a === 'center' ? xs[i] + c.w / 2 : xs[i] + pad;
+    doc.text(txt, x, yy, { align: c.a === 'left' ? 'left' : c.a, ...opts });
+  };
+  const rowLines = (yy, h) => { doc.setDrawColor(...LINE); doc.setLineWidth(0.25); doc.rect(M, yy, CW, h); xs.slice(1).forEach((x) => doc.line(x, yy, x, yy + h)); };
+  doc.setFillColor(...HEAD); doc.rect(M, y, CW, 8, 'F'); rowLines(y, 8);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...INK);
+  cols.forEach((c, i) => doc.text(c.h, c.a === 'left' ? xs[i] + 2.5 : xs[i] + c.w / 2, y + 5.4, { align: c.a === 'left' ? 'left' : 'center' }));
+  y += 8;
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5);
+  const items = (o.items || []).filter((it) => it.name || num(it.qty));
+  items.forEach((it, i) => {
+    const unit = itemSellIDR(it); const q = num(it.qty);
+    const name = doc.splitTextToSize(pdfTxt(it.name + (it.note ? ` (${it.note})` : '')) || '-', cols[1].w - 5);
+    const h = Math.max(7.5, name.length * 4.4 + 3.2);
+    if (y + h > 270) { doc.addPage(); y = M; }
+    rowLines(y, h); doc.setTextColor(...INK);
+    cellText(String(i + 1), 0, y + 5); doc.text(name, xs[1] + 2.5, y + 5); cellText(String(q), 2, y + 5);
+    cellText(nfmt(unit), 3, y + 5); cellText(nfmt(unit * q), 4, y + 5);
+    y += h;
+  });
+  // ringkasan
+  const sumRow = (label, val, opt = {}) => {
+    const h = opt.big ? 9 : 7.5;
+    if (opt.fill) { doc.setFillColor(...opt.fill); doc.rect(M, y, CW, h, 'F'); }
+    doc.setDrawColor(...LINE); doc.rect(M, y, CW, h); doc.line(xs[4], y, xs[4], y + h);
+    doc.setFont('helvetica', opt.big ? 'bold' : 'normal'); doc.setFontSize(opt.big ? 11 : 9.5); doc.setTextColor(...INK);
+    doc.text(label, xs[4] - 2.5, y + h / 2 + 1.5, { align: 'right' });
+    doc.text(val, xs[4] + cols[4].w - 2.5, y + h / 2 + 1.5, { align: 'right' });
+    y += h;
+  };
+  sumRow('SUBTOTAL', nfmt(t.subtotal));
+  sumRow('ONGKIR', t.shipping ? nfmt(t.shipping) : '-');
+  if (t.discount) sumRow('DISKON', '- ' + nfmt(t.discount));
+  sumRow(pays.length > 1 ? 'SUDAH DIBAYAR (DP)' : 'DP', t.paid ? '- ' + nfmt(t.paid) : '-');
+  sumRow('TOTAL PELUNASAN', 'Rp ' + nfmt(t.due), { big: true, fill: GREEN });
+  y += 6;
+  if (t.due <= 0) {
+    doc.setDrawColor(23, 145, 95); doc.setTextColor(23, 145, 95); doc.setLineWidth(0.8);
+    doc.roundedRect(M, y, 34, 11, 2, 2); doc.setFont('helvetica', 'bold'); doc.setFontSize(14); doc.text('LUNAS', M + 17, y + 7.6, { align: 'center' });
+    y += 17;
+  }
+  // riwayat pembayaran
+  if (pays.length) {
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.setTextColor(...INK); doc.text('Riwayat pembayaran', M, y); y += 5;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...GREY);
+    pays.forEach((p) => { doc.text(pdfTxt(`${fmtDate(p.createdAt)} · ${p.method || 'Transfer'}${p.note ? ' · ' + p.note : ''}`), M, y); doc.text('Rp ' + nfmt(p.amount), M + 90, y, { align: 'right' }); y += 4.6; });
+    y += 3;
+  }
+  if (S.invoiceNote) {
+    const lines = doc.splitTextToSize(pdfTxt(S.invoiceNote), CW - 8);
+    const h = lines.length * 4.6 + 9;
+    if (y + h > 280) { doc.addPage(); y = M; }
+    doc.setFillColor(253, 236, 234); doc.roundedRect(M, y, CW, h, 2, 2, 'F');
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.setTextColor(...RED); doc.text('Info pembayaran', M + 4, y + 6);
+    doc.setFont('helvetica', 'normal'); doc.setTextColor(...INK); doc.text(lines, M + 4, y + 11);
+    y += h + 5;
+  }
+  const lk = trackLink(o);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(...GREY);
+  if (lk) { doc.text('Lacak pesanan:', M, 284); doc.setTextColor(...RED); doc.textWithLink(lk.length > 95 ? lk.slice(0, 95) + '…' : lk, M + 22, 284, { url: lk }); }
+  doc.setTextColor(...GREY); doc.text(pdfTxt(`Terima kasih telah berbelanja di ${S.business || 'kami'}`), W - M, 289, { align: 'right' });
+  const safe = (x) => String(x || '').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-');
+  return { doc, name: `Invoice-${o.code}${cu?.name ? '-' + safe(cu.name) : ''}.pdf` };
+}
+async function sendInvoice(o, cu, pays) {
+  toast('Membuat invoice PDF…');
+  let r;
+  try { r = await buildInvoicePDF(o, cu, pays); } catch (e) { console.error(e); return toast('Gagal membuat PDF: ' + (e.message || e), 4000); }
+  const text = `Invoice #${o.code}${cu?.name ? ' — ' + cu.name : ''}`;
+  const Fs = plugin('Filesystem'); const Share = plugin('Share');
+  if (isNative() && Fs && Share) {
+    try {
+      const b64 = r.doc.output('datauristring').split(',')[1];
+      const w = await Fs.writeFile({ path: r.name, data: b64, directory: 'CACHE' });
+      toast(cu?.name ? `Pilih WhatsApp, lalu kontak ${cu.name}` : 'Pilih WhatsApp untuk mengirim');
+      await Share.share({ title: text, text, files: [w.uri], dialogTitle: 'Kirim invoice' });
+    } catch (e) { if (!/cancel/i.test(String(e && e.message))) toast('Gagal membagikan: ' + (e.message || e), 4000); }
+    return;
+  }
+  const blob = r.doc.output('blob');
+  const file = new File([blob], r.name, { type: 'application/pdf' });
+  try { if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: text, text }); return; } } catch (e) { if (e && e.name === 'AbortError') return; }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = r.name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  toast('Invoice diunduh — lampirkan di WhatsApp');
 }
 
 async function saveFile(name, content, mime) {
@@ -2512,7 +2660,7 @@ async function boot() {
   renderChrome();
   window.addEventListener('hashchange', () => route());
   document.addEventListener('input', (e) => { if (e.target.matches && e.target.matches('input[data-money]')) formatMoneyLive(e.target); }, true);
-  ['input', 'change'].forEach((t) => view.addEventListener(t, (e) => { if (e.target.matches && e.target.matches('input, textarea, select')) FORM_DIRTY = true; }));
+  ['input', 'change'].forEach((t) => view.addEventListener(t, (e) => { if (e.target.matches && e.target.matches('input, textarea, select') && !e.target.closest('.search, .chips')) FORM_DIRTY = true; }));
   $('#syncBtn').onclick = async () => {
     if (Sync.failed || Sync.lastError) { location.hash = '#/saya'; return; }
     toast('Menyinkronkan…'); await Sync.sync();
