@@ -2532,53 +2532,96 @@ async function buildInvoicePDF(o, cu, pays) {
   const addr = [cu?.address, cu?.city].filter(Boolean).join(', ');
   if (addr) { const a = doc.splitTextToSize(pdfTxt(addr), CW / 2 - 30); kv(M, y, 'Alamat', a[0]); }
   kv(col2, y, 'Event', pdfTxt(ev ? `Jastip ${ev.name}` : (o.trip || '-'))); y += 9;
-  // tabel barang
-  const cols = [{ h: 'NO', w: 12, a: 'center' }, { h: 'NAMA ITEM', w: 86, a: 'left' }, { h: 'JUMLAH', w: 22, a: 'center' }, { h: 'HARGA', w: 31, a: 'right' }, { h: 'TOTAL HARGA', w: CW - 151, a: 'right' }];
-  const xs = []; cols.reduce((x, c) => { xs.push(x); return x + c.w; }, M);
-  const cellText = (txt, i, yy, opts = {}) => {
-    const c = cols[i]; const pad = 2.5;
-    const x = c.a === 'right' ? xs[i] + c.w - pad : c.a === 'center' ? xs[i] + c.w / 2 : xs[i] + pad;
-    doc.text(txt, x, yy, { align: c.a === 'left' ? 'left' : c.a, ...opts });
+  // tabel barang (gaya kartu: header gradasi merah, foto, kategori, total pelunasan menonjol)
+  const prodMap = Object.fromEntries((await DB.all('products')).map((x) => [x.id, x]));
+  const mix = (c1, c2, k) => c1.map((v, j) => Math.round(v + (c2[j] - v) * k));
+  const grad = (x, yy, w, h, r, c1, c2) => {
+    doc.saveGraphicsState();
+    doc.roundedRect(x, yy, w, h, r, r, null); doc.clip(); doc.discardPath();
+    const n = 48;
+    for (let k = 0; k < n; k++) { doc.setFillColor(...mix(c1, c2, k / (n - 1))); doc.rect(x + (w * k) / n, yy, w / n + 0.3, h, 'F'); }
+    doc.restoreGraphicsState();
   };
-  const rowLines = (yy, h) => { doc.setDrawColor(...LINE); doc.setLineWidth(0.25); doc.rect(M, yy, CW, h); xs.slice(1).forEach((x) => doc.line(x, yy, x, yy + h)); };
-  doc.setFillColor(...HEAD); doc.rect(M, y, CW, 8, 'F'); rowLines(y, 8);
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...INK);
-  cols.forEach((c, i) => doc.text(c.h, c.a === 'left' ? xs[i] + 2.5 : xs[i] + c.w / 2, y + 5.4, { align: c.a === 'left' ? 'left' : 'center' }));
-  y += 8;
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5);
+  const R1 = [233, 57, 56], R2 = [241, 79, 112];       // merah → pink (header & kotak total)
+  const P1 = [253, 228, 228], P2 = [252, 214, 222];    // pink muda (bar total)
+  const SEP = [238, 236, 241], DARK = [196, 38, 46];
+  const cols = [{ h: 'No.', w: 14, a: 'center' }, { h: 'Nama Item', w: 84, a: 'left' }, { h: 'Jumlah', w: 22, a: 'center' }, { h: 'Harga Satuan', w: 32, a: 'right' }, { h: 'Total Harga', w: CW - 152, a: 'right' }];
+  const xs = []; cols.reduce((x, c) => { xs.push(x); return x + c.w; }, M);
+  const colX = (i) => cols[i].a === 'right' ? xs[i] + cols[i].w - 3 : cols[i].a === 'center' ? xs[i] + cols[i].w / 2 : xs[i] + 3;
+  const put = (txt, i, yy) => doc.text(txt, colX(i), yy, { align: cols[i].a === 'left' ? 'left' : cols[i].a });
+  const tableTop = y;
+  grad(M, y, CW, 10, 3, R1, R2);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(255, 255, 255);
+  cols.forEach((c, i) => put(c.h, i, y + 6.4));
+  y += 10;
   const items = (o.items || []).filter((it) => it.name || num(it.qty));
-  const thumbs = await Promise.all(items.map((it) => pdfThumb((it.photos && it.photos[0]) || it.productPhoto)));
+  const thumbs = await Promise.all(items.map((it) => pdfThumb((it.photos && it.photos[0]) || it.productPhoto || prodMap[it.productId]?.photo)));
   const withPh = thumbs.some(Boolean);
-  const TH = 16;  // ukuran foto (mm)
+  const TH = 15;  // ukuran foto (mm)
   items.forEach((it, i) => {
     const unit = itemSellIDR(it); const q = num(it.qty);
-    const tx = withPh ? TH + 4 : 0;
-    const name = doc.splitTextToSize(pdfTxt(it.name + (it.note ? ` (${it.note})` : '')) || '-', cols[1].w - 5 - tx);
-    const h = Math.max(withPh ? TH + 3 : 7.5, name.length * 4.4 + 3.2);
-    if (y + h > 270) { doc.addPage(); y = M; }
-    rowLines(y, h); doc.setTextColor(...INK);
-    const ty = withPh ? y + h / 2 + 1.3 - (name.length - 1) * 2.2 : y + 5;
-    if (thumbs[i]) doc.addImage(thumbs[i], 'JPEG', xs[1] + 1.5, y + (h - TH) / 2, TH, TH);
-    else if (withPh) { doc.setDrawColor(...LINE); doc.setFillColor(246, 247, 249); doc.rect(xs[1] + 1.5, y + (h - TH) / 2, TH, TH, 'FD'); }
-    cellText(String(i + 1), 0, withPh ? y + h / 2 + 1.3 : ty); doc.text(name, xs[1] + 2.5 + tx, ty); cellText(String(q), 2, withPh ? y + h / 2 + 1.3 : ty);
-    cellText(nfmt(unit), 3, withPh ? y + h / 2 + 1.3 : ty); cellText(nfmt(unit * q), 4, withPh ? y + h / 2 + 1.3 : ty);
+    const tx = withPh ? TH + 5 : 0;
+    const cat = pdfTxt([prodMap[it.productId]?.category, it.note].filter(Boolean).join(' · '));
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(9.8);
+    const name = doc.splitTextToSize(pdfTxt(it.name) || '-', cols[1].w - 4 - tx).slice(0, 3);
+    const textH = name.length * 4.3 + (cat ? 4.4 : 0);
+    const h = Math.max(withPh ? TH + 5 : 11, textH + 6);
+    if (y + h > 262) { doc.addPage(); y = M; }
+    const mid = y + h / 2;
+    // nomor dalam badge
+    doc.setFillColor(253, 232, 232); doc.roundedRect(xs[0] + cols[0].w / 2 - 3.3, mid - 3.3, 6.6, 6.6, 1.6, 1.6, 'F');
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...DARK); doc.text(String(i + 1), xs[0] + cols[0].w / 2, mid + 1.2, { align: 'center' });
+    // foto
+    if (withPh) {
+      const ix = xs[1] + 2, iy = mid - TH / 2;
+      doc.setDrawColor(...SEP); doc.setFillColor(248, 248, 250); doc.setLineWidth(0.2); doc.roundedRect(ix - 0.5, iy - 0.5, TH + 1, TH + 1, 1.8, 1.8, 'FD');
+      if (thumbs[i]) doc.addImage(thumbs[i], 'JPEG', ix, iy, TH, TH);
+    }
+    // nama + kategori
+    const nx = xs[1] + 3 + tx; let ny = mid - textH / 2 + 3.2;
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(9.8); doc.setTextColor(...INK); doc.text(name, nx, ny);
+    if (cat) { doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...GREY); doc.text(cat, nx, ny + name.length * 4.3 + 0.2); }
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(...INK);
+    put(String(q), 2, mid + 1.2); put('Rp ' + nfmt(unit), 3, mid + 1.2);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(10); put('Rp ' + nfmt(unit * q), 4, mid + 1.2);
     y += h;
+    doc.setDrawColor(...SEP); doc.setLineWidth(0.3); doc.line(M + 1, y, M + CW - 1, y);
   });
   // ringkasan
-  const sumRow = (label, val, opt = {}) => {
-    const h = opt.big ? 9 : 7.5;
-    if (opt.fill) { doc.setFillColor(...opt.fill); doc.rect(M, y, CW, h, 'F'); }
-    doc.setDrawColor(...LINE); doc.rect(M, y, CW, h); doc.line(xs[4], y, xs[4], y + h);
-    doc.setFont('helvetica', opt.big ? 'bold' : 'normal'); doc.setFontSize(opt.big ? 11 : 9.5); doc.setTextColor(...INK);
-    doc.text(label, xs[4] - 2.5, y + h / 2 + 1.5, { align: 'right' });
-    doc.text(val, xs[4] + cols[4].w - 2.5, y + h / 2 + 1.5, { align: 'right' });
+  const sx = xs[3];  // garis ringkasan mulai dari kolom harga satuan
+  const sumRow = (label, val, bold) => {
+    const h = 7.5;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...GREY);
+    doc.text(label, xs[3] + cols[3].w - 3, y + 5, { align: 'right' });
+    doc.setFont('helvetica', bold ? 'bold' : 'normal'); doc.setFontSize(bold ? 10 : 9.5); doc.setTextColor(...INK);
+    doc.text(val, M + CW - 3, y + 5, { align: 'right' });
     y += h;
+    doc.setDrawColor(...SEP); doc.setLineWidth(0.3); doc.line(sx, y, M + CW - 1, y);
   };
-  sumRow('SUBTOTAL', nfmt(t.subtotal));
-  sumRow('ONGKIR', t.shipping ? nfmt(t.shipping) : '-');
-  if (t.discount) sumRow('DISKON', '- ' + nfmt(t.discount));
-  sumRow(pays.length > 1 ? 'SUDAH DIBAYAR (DP)' : 'DP', t.paid ? '- ' + nfmt(t.paid) : '-');
-  sumRow('TOTAL PELUNASAN', 'Rp ' + nfmt(t.due), { big: true, fill: GREEN });
+  y += 1;
+  sumRow('Sub Total', 'Rp ' + nfmt(t.subtotal), true);
+  sumRow('Ongkir', t.shipping ? 'Rp ' + nfmt(t.shipping) : '-');
+  if (t.discount) sumRow('Diskon', '- Rp ' + nfmt(t.discount));
+  sumRow(pays.length > 1 ? 'Sudah dibayar' : 'DP', t.paid ? '- Rp ' + nfmt(t.paid) : '-');
+  y += 2.5;
+  // bar total pelunasan
+  const BH = 13, BW = 48;
+  grad(M, y, CW, BH, 3.5, P1, P2);
+  grad(M + CW - BW, y, BW, BH, 3.5, R1, R2);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.setTextColor(255, 255, 255);
+  doc.text('Rp ' + nfmt(t.due), M + CW - BW / 2, y + BH / 2 + 2, { align: 'center' });
+  doc.setFontSize(12.5); doc.setTextColor(...DARK);
+  const lx2 = M + CW - BW - 5;
+  doc.text('TOTAL PELUNASAN', lx2, y + BH / 2 + 1.6, { align: 'right' });
+  // ikon tas belanja
+  const bw = doc.getTextWidth('TOTAL PELUNASAN');
+  const ix = lx2 - bw - 9, iy = y + BH / 2 - 3;
+  doc.setDrawColor(...R1); doc.setLineWidth(0.7); doc.roundedRect(ix + 1.6, iy - 1.6, 2.8, 3.4, 1.3, 1.3, 'S');
+  doc.setFillColor(...R1); doc.roundedRect(ix, iy, 6, 5.4, 1, 1, 'F');
+  doc.setFillColor(255, 255, 255); doc.circle(ix + 1.8, iy + 1.5, 0.35, 'F'); doc.circle(ix + 4.2, iy + 1.5, 0.35, 'F');
+  y += BH;
+  // bingkai tipis seluruh tabel
+  doc.setDrawColor(246, 214, 214); doc.setLineWidth(0.3); doc.roundedRect(M, tableTop, CW, y - tableTop, 3.5, 3.5, 'S');
   y += 6;
   if (t.due <= 0) {
     doc.setDrawColor(23, 145, 95); doc.setTextColor(23, 145, 95); doc.setLineWidth(0.8);
