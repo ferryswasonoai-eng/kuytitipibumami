@@ -695,12 +695,13 @@ update public.settings set data = data || jsonb_build_object('categories', jsonb
 where id = 'main' and not (data ? 'categories');
 
 -- Produk katalog lama → event Bangkok + kategori sesuai brand
-update public.products set events = array['ev_bkk'] where id like 'p\_%' escape '\' and cardinality(events) = 0
-  and upper(brand) in ('TOFU', 'BUTTERFLY', 'GENTLEWOMAN', 'ERAWADEE');
+-- (hanya 71 produk bawaan & hanya sekali: produk yang dibuat/diubah admin tidak disentuh saat file ini dijalankan ulang)
+update public.products set events = array['ev_bkk']
+  where id ~ '^p_(tofu|butterfly|gw|erawadee)_[0-9]+$' and cardinality(events) = 0 and updated_by is null;
 update public.products set category = case upper(brand)
     when 'TOFU' then 'Skincare' when 'BUTTERFLY' then 'Parfum'
     when 'GENTLEWOMAN' then 'Tas & Aksesori' when 'ERAWADEE' then 'Herbal & Wellness' else category end
-  where category = '';
+  where category = '' and id ~ '^p_(tofu|butterfly|gw|erawadee)_[0-9]+$' and updated_by is null;
 
 -- Pesanan lama tanpa event → dicocokkan dari nama trip
 update public.orders o set event_id = e.id from public.events e
