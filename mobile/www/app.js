@@ -318,7 +318,7 @@ const MAP = {
   products: [['id', 'id'], ['name', 'name', 'str'], ['brand', 'brand', 'str'], ['description', 'description', 'str'],
     ['buyPrice', 'buy_price', 'num'], ['buyCur', 'buy_cur', 'cur'], ['sellPrice', 'sell_price', 'num'], ['weight', 'weight', 'num'],
     ['photo', 'photo', 'nul'], ['note', 'note', 'str'], ['published', 'published', 'bool'], ['sort', 'sort', 'int'], ['createdAt', 'created_at', 'ts'],
-    ['category', 'category', 'str'], ['events', 'events', 'arr'], ['badge', 'badge', 'str'], ['featured', 'featured', 'boolf']],
+    ['category', 'category', 'str'], ['events', 'events', 'arr'], ['badge', 'badge', 'str'], ['featured', 'featured', 'boolf'], ['photos', 'photos', 'arr']],
   customers: [['id', 'id'], ['name', 'name', 'str'], ['phone', 'phone', 'str'], ['city', 'city', 'str'], ['address', 'address', 'str'],
     ['note', 'note', 'str'], ['createdAt', 'created_at', 'ts']],
   orders: [['id', 'id'], ['code', 'code', 'str'], ['customerId', 'customer_id', 'nul'], ['trip', 'trip', 'str'], ['status', 'status', 'str'],
@@ -418,6 +418,11 @@ const Sync = {
         ({ error } = await supa.from(op.table).upsert(op.row, { onConflict: 'id', ignoreDuplicates: true }));
       } else if (op.kind === 'update') {
         ({ error } = await supa.from(op.table).update(op.patch).eq('id', op.id));
+      }
+      if (error && op.row && /Could not find the '(\w+)' column|column "?(\w+)"? of relation .* does not exist/i.test(error.message || '')) {
+        // database belum diperbarui (schema.sql lama) → kirim tanpa kolom baru, tandai agar owner menjalankan ulang schema.sql
+        const m = (error.message || '').match(/'(\w+)' column|column "?(\w+)"?/i); const col = m && (m[1] || m[2]);
+        if (col && col in op.row) { delete op.row[col]; this.schemaWarn = col; await DB.put('outbox', op); return this.run(op); }
       }
       if (!error) return 'ok';
       if (this.isTransient(error)) return 'retry';
@@ -2110,7 +2115,7 @@ async function viewProductForm(id) {
   if (id && !p) { location.hash = '#/produk'; return; }
   const ro = !canSell();
   const ev0 = viewProducts.ev ? evById(viewProducts.ev) : curEv();
-  p = p ? { ...p, events: [...(p.events || [])] } : { id: 'p_' + uid(), name: '', brand: '', description: '', buyPrice: '', buyCur: evCfg(ev0).currency, sellPrice: '', weight: '', photo: '', note: '', published: true, sort: 0, createdAt: Date.now(),
+  p = p ? { ...p, events: [...(p.events || [])], photos: [...(p.photos || [])] } : { id: 'p_' + uid(), name: '', brand: '', description: '', buyPrice: '', buyCur: evCfg(ev0).currency, sellPrice: '', weight: '', photo: '', note: '', published: true, sort: 0, createdAt: Date.now(),
     category: viewProducts.cat || '', events: ev0 ? [ev0.id] : [], badge: '', featured: false };
   const pEv = () => evById(p.events[0]) || curEv();
   const brands = [...new Set((await DB.all('products')).map((x) => (x.brand || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
@@ -2122,6 +2127,8 @@ async function viewProductForm(id) {
     if (!id && draft.id) p.id = draft.id;
     Object.assign(p, draft.p || {});
   }
+  // daftar foto: [0] = foto utama (dipakai kartu katalog, pesanan & invoice)
+  p.photos = (p.photos && p.photos.length ? p.photos : (p.photo ? [p.photo] : [])).filter(Boolean).slice(0, 3);
   view.innerHTML = `
     <button class="back" onclick="location.hash='#/produk'">‹ Produk</button>
     <p class="eyebrow">${id ? (ro ? 'Produk' : 'Ubah produk') : 'Produk baru'}</p>
@@ -2130,7 +2137,7 @@ async function viewProductForm(id) {
     ${ro ? '' : `<button class="btn" type="button" id="pPaste" style="margin-bottom:12px">📋 Tempel teks dari WhatsApp — isi otomatis</button>`}
     <fieldset ${ro ? 'disabled' : ''} style="border:0;padding:0;margin:0;min-width:0">
     <section class="card">
-      <div class="field"><label>Foto</label><div class="photos" id="pPhoto"></div></div>
+      <div class="field"><label>Foto produk <span class="muted">(maks. 3 — foto pertama jadi foto utama)</span></label><div class="photos" id="pPhoto"></div></div>
       <div class="field"><label class="req">Nama produk</label><input class="input" id="pName" value="${esc(p.name)}"></div>
       <div class="field"><label>Brand / toko</label><input class="input" id="pBrand" data-suggest="brands" autocomplete="off" autocapitalize="characters" placeholder="Ketik brand baru / pilih" value="${esc(p.brand)}"></div>
       <div class="two">
@@ -2162,7 +2169,9 @@ async function viewProductForm(id) {
       ${id && isOwner() ? '<button class="btn danger" id="pDel">Hapus produk</button>' : ''}
     </div>`;
   const drawPhoto = async () => {
-    $('#pPhoto').innerHTML = p.photo ? photoTiles([p.photo], !ro) : (ro ? '<span class="muted">Belum ada foto</span>' : photoAdd('product'));
+    p.photo = p.photos[0] || '';
+    $('#pPhoto').innerHTML = p.photos.map((ph, i) => `<div class="photo ${i === 0 ? 'main' : ''}"><img data-pid="${esc(ph)}" data-zoom alt="">${i === 0 && p.photos.length > 1 ? '<span class="ph-main">Utama</span>' : ''}${ro ? '' : `<button type="button" data-rm-photo="${esc(ph)}" aria-label="Hapus foto">✕</button>${i > 0 ? `<button type="button" class="ph-star" data-main-photo="${i}" aria-label="Jadikan foto utama">★</button>` : ''}`}</div>`).join('')
+      + (ro ? (p.photos.length ? '' : '<span class="muted">Belum ada foto</span>') : (p.photos.length < 3 ? photoAdd('product') : ''));
     await hydratePhotos($('#pPhoto'));
   };
   const help = () => {
@@ -2177,12 +2186,23 @@ async function viewProductForm(id) {
   if (ro) return;
   if (draft) FORM_DIRTY = true;
   const readForm = () => ({ name: $('#pName').value, brand: $('#pBrand').value, weight: $('#pWeight').value, description: $('#pDesc').value, buyPrice: $('#pBuy') ? $('#pBuy').value : p.buyPrice, buyCur: $('#pCur') ? $('#pCur').value : p.buyCur,
-    sellPrice: $('#pSell').value, note: $('#pNote') ? $('#pNote').value : p.note, published: $('#pPub').checked, category: $('#pCat').value, badge: $('#pBadge').value, featured: $('#pFeat').checked, photo: p.photo, events: p.events });
+    sellPrice: $('#pSell').value, note: $('#pNote') ? $('#pNote').value : p.note, published: $('#pPub').checked, category: $('#pCat').value, badge: $('#pBadge').value, featured: $('#pFeat').checked, photo: p.photos[0] || '', photos: p.photos, events: p.events });
   const saveDraft = () => { clearTimeout(saveDraft._t); saveDraft._t = setTimeout(() => { if ($('#pName')) Draft.set(dKey, { id: p.id, p: readForm() }); }, 250); };
   const fs = $('fieldset', view); fs.addEventListener('input', saveDraft); fs.addEventListener('change', saveDraft);
   const dd = $('#draftDrop'); if (dd) dd.onclick = () => { Draft.del(dKey); FORM_DIRTY = false; route(); };
-  $('#pPhoto').onchange = async (e) => { if (e.target.dataset.addPhoto) { FORM_DIRTY = true; const ids = await savePhotos([e.target.files[0]]); p.photo = ids[0]; drawPhoto(); saveDraft(); } };
-  $('#pPhoto').addEventListener('click', (e) => { const rm = e.target.closest('[data-rm-photo]'); if (rm) { e.preventDefault(); p.photo = ''; drawPhoto(); saveDraft(); } });
+  $('#pPhoto').onchange = async (e) => {
+    if (!e.target.dataset.addPhoto) return;
+    FORM_DIRTY = true;
+    const files = Array.from(e.target.files || []).slice(0, 3 - p.photos.length);
+    if ((e.target.files || []).length > files.length) toast('Maksimal 3 foto per produk');
+    const ids = await savePhotos(files); p.photos = [...p.photos, ...ids].slice(0, 3); drawPhoto(); saveDraft();
+  };
+  $('#pPhoto').addEventListener('click', (e) => {
+    const rm = e.target.closest('[data-rm-photo]');
+    if (rm) { e.preventDefault(); p.photos = p.photos.filter((x) => x !== rm.dataset.rmPhoto); drawPhoto(); saveDraft(); return; }
+    const mn = e.target.closest('[data-main-photo]');
+    if (mn) { e.preventDefault(); const i = +mn.dataset.mainPhoto; p.photos = [p.photos[i], ...p.photos.filter((_, j) => j !== i)]; drawPhoto(); saveDraft(); toast('Foto utama diganti'); }
+  });
   $$('[data-pev]').forEach((b) => b.onclick = () => {
     const id = b.dataset.pev; p.events = p.events.includes(id) ? p.events.filter((x) => x !== id) : [...p.events, id];
     b.classList.toggle('on', p.events.includes(id)); FORM_DIRTY = true; saveDraft();
@@ -2228,7 +2248,7 @@ async function viewProductForm(id) {
   $('#pSave').onclick = async () => {
     const name = $('#pName').value.trim(); if (!name) return toast('Nama produk wajib diisi');
     Object.assign(p, { name, brand: $('#pBrand').value.trim(), weight: $('#pWeight').value, description: $('#pDesc').value.trim(), buyPrice: $('#pBuy').value, buyCur: $('#pCur').value, sellPrice: $('#pSell').value, note: $('#pNote').value, published: $('#pPub').checked,
-      category: $('#pCat').value, badge: $('#pBadge').value, featured: $('#pFeat').checked });
+      category: $('#pCat').value, badge: $('#pBadge').value, featured: $('#pFeat').checked, photo: p.photos[0] || '', photos: p.photos.slice(0, 3) });
     await saveRow('products', p);
     Draft.del(dKey); FORM_DIRTY = false;
     toast('Produk disimpan ✓'); location.hash = '#/produk';
@@ -2358,6 +2378,7 @@ async function viewSettings() {
       <div class="kv"><span>Menunggu dikirim</span><span>${ops.length - failed.length}</span></div>
       ${failed.length ? `<div class="alert err" style="margin-top:12px"><b>${failed.length} perubahan gagal dikirim</b>${failed.slice(0, 5).map((f) => `<div class="small">• ${esc(f.table)} ${esc(f.id)}: ${esc(f.error)}</div>`).join('')}</div>
         <div class="two"><button class="btn" id="retryFailed">Coba lagi</button><button class="btn danger" id="dropFailed">Buang</button></div>` : ''}
+      ${Sync.schemaWarn ? `<div class="alert warn" style="margin-top:12px"><b>Database perlu diperbarui</b><div class="small">Owner: jalankan ulang file <b>supabase/schema.sql</b> di Supabase SQL Editor (kolom <code>${esc(Sync.schemaWarn)}</code> belum ada). Sementara itu data tetap tersimpan, kecuali bagian baru tersebut.</div></div>` : ''}
       ${Sync.lastError ? `<div class="alert err" style="margin-top:12px"><b>Sebagian data gagal diunduh</b><div class="small" style="word-break:break-word">${esc(Sync.lastError)}</div><div class="small" style="margin-top:4px">Kirim tangkapan layar ini ke pengelola aplikasi bila terus muncul.</div></div>` : ''}
       <div class="two" style="margin-top:12px"><button class="btn" id="syncNow">↻ Sinkron sekarang</button><button class="btn" id="syncFull">⤓ Unduh ulang semua</button></div>
     </section>

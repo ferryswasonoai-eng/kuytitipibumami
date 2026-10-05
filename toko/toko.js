@@ -230,13 +230,16 @@ function openDetail(id, { push = true } = {}) {
   const open = EV?.status === 'open';
   const c = p.category ? catOf(p.category) : null;
   const sim = similar(p);
+  const phs = (p.photos && p.photos.length ? p.photos : (p.photo ? [p.photo] : [])).filter(Boolean).slice(0, 3);
   const url = (() => { const u = new URL(location.href); u.searchParams.set('e', (EV?.code || '').toLowerCase()); u.searchParams.set('p', p.id); return u.toString(); })();
   openSheet(`
     <div class="pd">
-      <div class="pd-ph" ${p.photo ? `data-zoom="${esc(photoUrl(p.photo))}"` : ''}>${p.photo ? `<img src="${esc(photoUrl(p.photo))}" alt="${esc(p.name)}" onerror="this.remove()">` : '<span>📦</span>'}
+      <div class="pd-ph">${phs.length ? `<div class="pd-track">${phs.map((ph, i) => `<div class="pd-slide" data-zoom="${esc(photoUrl(ph))}"><img src="${esc(photoUrl(ph))}" alt="${esc(p.name)} ${i + 1}" ${i ? 'loading="lazy"' : ''} onerror="this.remove()"></div>`).join('')}</div>` : '<span>📦</span>'}
         ${p.badge ? `<span class="ribbon">${esc(p.badge)}</span>` : ''}
         <button class="pd-x" data-close aria-label="Tutup">✕</button>
-        ${p.photo ? '<span class="pd-zoom">🔍 Ketuk untuk perbesar</span>' : ''}</div>
+        ${phs.length > 1 ? `<span class="pd-count">1 / ${phs.length}</span>` : ''}
+        ${phs.length ? '<span class="pd-zoom">🔍 Ketuk untuk perbesar</span>' : ''}</div>
+      ${phs.length > 1 ? `<div class="pd-thumbs">${phs.map((ph, i) => `<button type="button" class="pd-th ${i ? '' : 'on'}" data-pdi="${i}" aria-label="Foto ${i + 1}"><img src="${esc(photoUrl(ph))}" alt="" loading="lazy" onerror="this.remove()"></button>`).join('')}</div>` : ''}
       <div class="pd-body">
         ${p.brand ? `<button class="pd-br" data-brand-pd="${esc(p.brand)}">${esc(p.brand)} ›</button>` : ''}
         <h2 class="pd-nm">${esc(p.name)}</h2>
@@ -260,6 +263,12 @@ function openDetail(id, { push = true } = {}) {
       </div>
     </div>`, 'detail');
   sheet.dataset.pid = p.id;
+  const track = $('.pd-track', sheet);
+  if (track && phs.length > 1) {
+    const cnt = $('.pd-count', sheet); const ths = $$('.pd-th', sheet);
+    track.onscroll = () => { const i = Math.round(track.scrollLeft / track.clientWidth); if (cnt) cnt.textContent = `${i + 1} / ${phs.length}`; ths.forEach((t, j) => t.classList.toggle('on', j === i)); };
+    ths.forEach((t) => { t.onclick = (e) => { e.stopPropagation(); track.scrollTo({ left: track.clientWidth * +t.dataset.pdi, behavior: 'smooth' }); }; });
+  }
   sheet.classList.add('sheet-pd');
   $('.sheet-in', sheet).scrollTop = 0; sheet.scrollTop = 0;
   if (push) setProductParam(p.id);
