@@ -270,6 +270,11 @@ function openDetail(id, { push = true } = {}) {
           ${waNum() ? `<a class="pd3-wa" target="_blank" rel="noopener" href="${esc(waOrder)}">${SV.wa}<span><span class="lg">Pesan via </span>WhatsApp</span></a>` : ''}
         </div>
       </div>
+      ${sim.length ? `<div class="pd3-sim"><div class="pd3-simhead"><h3>Produk serupa</h3>${p.brand ? `<button type="button" data-brand-pd="${esc(p.brand)}">Lihat semua ${esc(p.brand)} ›</button>` : ''}</div>
+        <div class="pd3-simrow">${sim.map((x) => `<button class="sim" data-open="${x.id}">
+          <span class="sim-ph">${x.photo ? `<img src="${esc(photoUrl(x.photo))}" alt="" loading="lazy" onerror="this.remove()">` : '📦'}</span>
+          <span class="sim-br">${esc(x.brand || '')}</span><span class="sim-nm">${esc(x.name)}</span>
+          <b>${fmtIDR(x.price)}${Number(x.normalPrice) > Number(x.price) ? `<s>${fmtIDR(x.normalPrice)}</s>` : ''}</b></button>`).join('')}</div></div>` : ''}
     </div>`, 'detail');
   const more = $('#pdMore', sheet);
   if (more) more.onclick = (e) => { e.stopPropagation(); const d = $('#pdDesc', sheet); d.classList.toggle('clamp'); more.textContent = d.classList.contains('clamp') ? 'Selengkapnya ▾' : 'Tutup ▴'; };

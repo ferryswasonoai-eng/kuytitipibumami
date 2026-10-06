@@ -366,37 +366,33 @@ dialog.sheet.sheet-pd::backdrop { background: rgba(16,18,30,.45); backdrop-filte
 .pd3-add[disabled] { opacity: .5; cursor: not-allowed; }
 .pd3-wa { border: 1.5px solid var(--pk2); color: var(--rd); background: #fff; }
 .pd3-wa svg { color: #e8364a; }
-/* HP: tetap 2 kolom (foto kiri, info kanan), ukuran diperkecil */
+/* produk serupa (di bawah, lebar penuh) */
+.pd3-sim { grid-column: 1 / -1; border-top: 1px solid var(--line); padding-top: 14px; margin-top: 2px; }
+.pd3-simhead { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.pd3-simhead h3 { font-size: 1.02rem; font-weight: 800; color: var(--navy); margin: 0; }
+.pd3-simhead button { border: 0; background: none; color: var(--rd); font: 600 .8rem var(--font); cursor: pointer; padding: 0; }
+.pd3-simrow { display: grid; grid-auto-flow: column; grid-auto-columns: calc((100% - 36px) / 5); gap: 9px; overflow-x: auto; padding-bottom: 4px; scroll-snap-type: x mandatory; scrollbar-width: thin; }
+.pd3-simrow .sim { scroll-snap-align: start; border-radius: 14px; }
+.pd3-simrow .sim-br { font-size: .6rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); padding: 2px 9px 0; }
+.pd3-simrow .sim b { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; color: var(--rd); }
+.pd3-simrow .sim s { font-size: .66rem; font-weight: 500; color: var(--muted); }
+/* HP: susunan atas-bawah (foto di atas, info di bawah) */
 @media (max-width: 640px) {
-  dialog.sheet.sheet-pd { width: calc(100% - 16px); border-radius: 18px; }
-  .pd3 { grid-template-columns: 44% 1fr; gap: 10px; padding: 10px; }
-  .pd3-x { top: 8px; right: 8px; width: 28px; height: 28px; font-size: .75rem; }
-  .pd3-ph { border-radius: 12px; }
-  .pd3-ph .ribbon { top: 7px; left: 7px; font-size: .58rem; padding: 3px 6px; }
-  .pd3-thumbs { gap: 4px; margin-top: 5px; grid-template-columns: repeat(3, 1fr); }
-  .pd3-thumbs .pd-th { border-radius: 7px; border-width: 1.5px; }
-  .pd3-brand { font-size: .66rem; gap: 5px; margin-right: 30px; }
-  .pd3-brand .av { width: 22px; height: 22px; font-size: .6rem; }
-  .pd3-nm { font-size: .98rem; margin: 6px 0 0; }
-  .pd3-sub { font-size: .7rem; }
-  .pd3-pr { margin: 6px 0 0; gap: 2px 6px; }
-  .pd3-pr b { font-size: 1.05rem; }
-  .pd3-pr s { font-size: .64rem; }
-  .pd3-pr .off { font-size: .6rem; padding: 2px 6px; }
-  .pd3-ds { font-size: .66rem; line-height: 1.45; margin-top: 5px; }
-  .pd3-more { font-size: .64rem; }
-  .pd3-qtyrow { grid-template-columns: 1fr; gap: 6px; padding-top: 8px; }
-  .pd3-qty { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
-  .pd3-qty label { margin: 0; font-size: .68rem; }
-  .pd3-qty .step { grid-template-columns: 26px 26px 26px; height: 30px; border-radius: 9px; }
-  .pd3-qty .step button { font-size: .9rem; }
-  .pd3-qty .step span { font-size: .78rem; }
-  .pd3-note { min-height: 0; padding: 5px 7px; gap: 5px; border-radius: 9px; }
-  .pd3-note svg { width: 14px; height: 14px; }
-  .pd3-note b { font-size: .62rem; }
-  .pd3-note span { font-size: .56rem; }
-  .pd3-cta { grid-template-columns: 1fr; gap: 6px; margin-top: 8px; }
-  .pd3-add, .pd3-wa { height: 36px; border-radius: 10px; font-size: .74rem; gap: 5px; }
-  .pd3 svg { width: 15px; height: 15px; }
-  .pd3-wa .lg { display: none; }
+  dialog.sheet.sheet-pd { width: 100%; max-width: 100%; margin: auto auto 0; border-radius: 22px 22px 0 0; max-height: 94vh; }
+  .pd3 { grid-template-columns: 1fr; gap: 12px; padding: 12px 14px 0; }
+  .pd3-x { top: 20px; right: 22px; background: rgba(255,255,255,.92); box-shadow: 0 4px 12px -6px rgba(0,0,0,.4); }
+  .pd3-ph { border-radius: 16px; }
+  .pd3-thumbs { grid-template-columns: repeat(4, 64px); gap: 8px; }
+  .pd3-brand { margin-right: 0; }
+  .pd3-nm { font-size: 1.28rem; margin-top: 8px; }
+  .pd3-pr b { font-size: 1.55rem; }
+  .pd3-ds { font-size: .88rem; }
+  .pd3-qtyrow { grid-template-columns: 1fr; gap: 10px; padding-top: 12px; }
+  .pd3-qty { display: flex; align-items: center; justify-content: space-between; }
+  .pd3-qty label { margin: 0; }
+  .pd3-cta { position: sticky; bottom: 0; z-index: 3; background: #fff; margin: 10px -14px 0; padding: 10px 14px calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); }
+  .pd3-add, .pd3-wa { height: 48px; font-size: .88rem; }
+  .pd3-sim { padding: 12px 0 16px; }
+  .pd3-simrow { grid-auto-columns: 42%; }
 }
+@media (max-width: 420px) { .pd3-wa .lg { display: none; } }
