@@ -239,7 +239,6 @@ function openDetail(id, { push = true } = {}) {
     cal: '<svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>',
   };
   const desc = p.description || '';
-  const longDesc = desc.length > 160 || desc.split('\n').length > 3;
   const limited = /limited|terbatas|stok/i.test(p.badge || '');
   const np = Number(p.normalPrice) > Number(p.price) ? Number(p.normalPrice) : 0;
   const off = np ? Math.round((1 - Number(p.price) / np) * 100) : 0;
@@ -259,7 +258,7 @@ function openDetail(id, { push = true } = {}) {
         <h2 class="pd3-nm">${esc(p.name)}</h2>
         ${p.category ? `<div class="pd3-sub">${esc(p.category)}</div>` : ''}
         <div class="pd3-pr"><b>${fmtIDR(p.price)}</b>${np ? `<s>${fmtIDR(np)}</s><span class="off">-${off}%</span>` : ''}</div>
-        ${desc ? `<div class="pd3-ds ${longDesc ? 'clamp' : ''}" id="pdDesc">${esc(desc)}</div>${longDesc ? '<button type="button" class="pd3-more" id="pdMore">Selengkapnya ▾</button>' : ''}` : ''}
+        ${desc ? `<div class="pd3-ds">${esc(desc)}</div>` : ''}
         <div class="pd3-qtyrow">
           <div class="pd3-qty"><label>Jumlah</label>
             <div class="step"><button data-dec="${p.id}" aria-label="Kurangi">−</button><span>${qty}</span><button data-inc="${p.id}" aria-label="Tambah">+</button></div></div>
@@ -276,8 +275,7 @@ function openDetail(id, { push = true } = {}) {
           <span class="sim-br">${esc(x.brand || '')}</span><span class="sim-nm">${esc(x.name)}</span>
           <b>${fmtIDR(x.price)}${Number(x.normalPrice) > Number(x.price) ? `<s>${fmtIDR(x.normalPrice)}</s>` : ''}</b></button>`).join('')}</div></div>` : ''}
     </div>`, 'detail');
-  const more = $('#pdMore', sheet);
-  if (more) more.onclick = (e) => { e.stopPropagation(); const d = $('#pdDesc', sheet); d.classList.toggle('clamp'); more.textContent = d.classList.contains('clamp') ? 'Selengkapnya ▾' : 'Tutup ▴'; };
+
   sheet.dataset.pid = p.id;
   const track = $('.pd-track', sheet);
   if (track && phs.length > 1) {
