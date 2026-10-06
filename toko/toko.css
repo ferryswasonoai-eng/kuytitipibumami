@@ -396,3 +396,21 @@ dialog.sheet.sheet-pd::backdrop { background: rgba(16,18,30,.45); backdrop-filte
   .pd3-simrow { grid-auto-columns: 42%; }
 }
 @media (max-width: 420px) { .pd3-wa .lg { display: none; } }
+
+/* ---------- Brand Favorit sebagai slicer (di bawah kategori) ---------- */
+.brand-bar { margin: 4px 0 6px; }
+.brand-bar-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.brand-bar-head h2 { font-size: 1.05rem; font-weight: 800; padding-left: 10px; border-left: 4px solid var(--red); line-height: 1.1; }
+.brand-reset { border: 0; background: none; color: var(--red); font: 600 .8rem var(--font); cursor: pointer; }
+.brand-bar .brands { display: flex; gap: 10px; overflow-x: auto; padding: 2px 2px 8px; scrollbar-width: none; scroll-snap-type: x proximity; }
+.brand-bar .brands::-webkit-scrollbar { display: none; }
+.brand-bar .brand { flex: 0 0 auto; min-width: 128px; height: 52px; padding: 0 18px; font-size: .86rem; border-radius: 12px; box-shadow: var(--shadow); scroll-snap-align: start; }
+@media (min-width: 1000px) { .brand-bar .brands { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); overflow: visible; } .brand-bar .brand { min-width: 0; } }
+@media (max-width: 640px) { .brand-bar .brand { min-width: 0; height: 40px; padding: 0 14px; font-size: .76rem; border-radius: 10px; } .brand-bar-head h2 { font-size: .98rem; } }
+
+/* ---------- Cara Order: kartu bergambar ---------- */
+.steps-vis { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 26px; align-items: center; }
+.steps-vis li { position: relative; }
+.steps-vis img { display: block; width: 100%; height: auto; filter: drop-shadow(0 14px 22px rgba(232,54,74,.12)); }
+.steps-vis li:not(:last-child)::after { content: "›"; position: absolute; right: -24px; top: 50%; transform: translateY(-50%); width: 22px; height: 22px; border-radius: 50%; background: #fff; color: var(--red); display: grid; place-items: center; font-weight: 800; font-size: 1.05rem; line-height: 1; box-shadow: 0 4px 10px -4px rgba(232,54,74,.5); z-index: 1; }
+@media (max-width: 860px) { .steps-vis { grid-template-columns: repeat(2, 1fr); gap: 14px; } .steps-vis li:not(:last-child)::after { display: none; } }

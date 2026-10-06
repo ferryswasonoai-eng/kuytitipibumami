@@ -168,9 +168,11 @@ function renderProducts() {
   $$('.step span').forEach((s) => { const id = s.previousElementSibling.dataset.dec; if (!cart()[id] && pending[id]) s.textContent = pending[id]; });
 }
 function renderBrands() {
-  const bs = [...new Set(evProducts().map((p) => p.brand).filter(Boolean))];
+  const bs = [...new Set(evProducts().map((p) => (p.brand || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   $('#brandSec').hidden = bs.length < 2;
-  $('#brands').innerHTML = bs.map((b) => `<button class="brand ${b === brand ? 'on' : ''}" data-brand="${esc(b)}">${esc(b)}</button>`).join('');
+  $('#brands').innerHTML = [`<button class="brand ${!brand ? 'on' : ''}" data-brand="">Semua</button>`,
+    ...bs.map((b) => `<button class="brand ${b === brand ? 'on' : ''}" data-brand="${esc(b)}">${esc(b)}</button>`)].join('');
+  $('#brandReset').hidden = !brand;
 }
 function renderSchedule() {
   $('#sched').innerHTML = EVENTS.length ? EVENTS.map((e) => `<button class="sched-card" data-ev="${e.id}">
@@ -390,6 +392,7 @@ document.addEventListener('click', (e) => {
 $('#searchForm').addEventListener('submit', (e) => { e.preventDefault(); query = $('#q').value; renderProducts(); document.getElementById('produk').scrollIntoView({ behavior: 'smooth' }); });
 let qt; $('#q').addEventListener('input', (e) => { clearTimeout(qt); qt = setTimeout(() => { query = e.target.value; renderProducts(); }, 200); });
 ['#cartBtn', '#cartBtn2', '#openCart'].forEach((s) => { $(s).onclick = () => openCart(); });
+$('#brandReset').onclick = () => { brand = ''; renderBrands(); renderProducts(); };
 ['#myOrdersBtn', '#myOrdersBtn2'].forEach((s) => { $(s).onclick = openMyOrders; });
 // tandai menu aktif sesuai bagian yang sedang dilihat
 const navs = $$('.links a, .bottom a[href^="#"]');
