@@ -148,7 +148,7 @@ function cardHTML(p) {
       <div class="nm" data-open="${p.id}">${esc(p.name)}</div>
       ${p.description ? `<div class="ds" data-open="${p.id}">${esc(p.description)}</div>` : ''}
       <button class="more-link" type="button" data-open="${p.id}">Lihat detail ›</button>
-      <div class="pr">${fmtIDR(p.price)}${Number(p.normalPrice) > Number(p.price) ? `<s>${fmtIDR(p.normalPrice)}</s>` : ''}</div>
+      <div class="pr">${fmtIDR(p.price)}</div>
       <div class="buy">
         <div class="step"><button data-dec="${p.id}" aria-label="Kurangi">−</button><span>${n || 1}</span><button data-inc="${p.id}" aria-label="Tambah">+</button></div>
         <button class="add ${n ? 'in' : ''}" data-add="${p.id}" ${open ? '' : 'disabled'}>
@@ -242,8 +242,6 @@ function openDetail(id, { push = true } = {}) {
   };
   const desc = p.description || '';
   const limited = /limited|terbatas|stok/i.test(p.badge || '');
-  const np = Number(p.normalPrice) > Number(p.price) ? Number(p.normalPrice) : 0;
-  const off = np ? Math.round((1 - Number(p.price) / np) * 100) : 0;
   const waOrder = waLink(`Halo ${INFO.business || 'admin'}, saya mau pesan 🙏\n*${p.name}*${p.brand ? ' (' + p.brand + ')' : ''}\nJumlah: ${qty} × ${fmtIDR(p.price)} = ${fmtIDR(qty * p.price)}\n${EV ? 'Jastip ' + EV.name + '\n' : ''}${url}`);
   const note = limited ? `<div class="pd3-note">${SV.alert}<span><b>Stok terbatas</b>Segera pesan sebelum kehabisan.</span></div>`
     : EV && EV.poEnd ? `<div class="pd3-note">${SV.cal}<span><b>${open ? 'PO ditutup ' : 'PO berakhir '}${esc(fmtRange(null, EV.poEnd).replace('Sampai ', ''))}</b>${open ? 'Pesan sebelum PO ditutup.' : 'Tunggu jadwal berikutnya.'}</span></div>` : '';
@@ -259,7 +257,7 @@ function openDetail(id, { push = true } = {}) {
         ${p.brand ? `<button class="pd3-brand" data-brand-pd="${esc(p.brand)}"><span class="av">${esc(p.brand.trim()[0] || '•')}</span>${esc(p.brand)} <i>›</i></button>` : ''}
         <h2 class="pd3-nm">${esc(p.name)}</h2>
         ${p.category ? `<div class="pd3-sub">${esc(p.category)}</div>` : ''}
-        <div class="pd3-pr"><b>${fmtIDR(p.price)}</b>${np ? `<s>${fmtIDR(np)}</s><span class="off">-${off}%</span>` : ''}</div>
+        <div class="pd3-pr"><b>${fmtIDR(p.price)}</b></div>
         ${desc ? `<div class="pd3-ds">${esc(desc)}</div>` : ''}
         <div class="pd3-qtyrow">
           <div class="pd3-qty"><label>Jumlah</label>
@@ -275,7 +273,7 @@ function openDetail(id, { push = true } = {}) {
         <div class="pd3-simrow">${sim.map((x) => `<button class="sim" data-open="${x.id}">
           <span class="sim-ph">${x.photo ? `<img src="${esc(photoUrl(x.photo))}" alt="" loading="lazy" onerror="this.remove()">` : '📦'}</span>
           <span class="sim-br">${esc(x.brand || '')}</span><span class="sim-nm">${esc(x.name)}</span>
-          <b>${fmtIDR(x.price)}${Number(x.normalPrice) > Number(x.price) ? `<s>${fmtIDR(x.normalPrice)}</s>` : ''}</b></button>`).join('')}</div></div>` : ''}
+          <b>${fmtIDR(x.price)}</b></button>`).join('')}</div></div>` : ''}
     </div>`, 'detail');
 
   sheet.dataset.pid = p.id;
