@@ -148,7 +148,7 @@ function cardHTML(p) {
       <div class="nm" data-open="${p.id}">${esc(p.name)}</div>
       ${p.description ? `<div class="ds" data-open="${p.id}">${esc(p.description)}</div>` : ''}
       <button class="more-link" type="button" data-open="${p.id}">Lihat detail ›</button>
-      <div class="pr">${fmtIDR(p.price)}</div>
+      <div class="pr">${fmtIDR(p.price)}${Number(p.normalPrice) > Number(p.price) ? `<s>${fmtIDR(p.normalPrice)}</s>` : ''}</div>
       <div class="buy">
         <div class="step"><button data-dec="${p.id}" aria-label="Kurangi">−</button><span>${n || 1}</span><button data-inc="${p.id}" aria-label="Tambah">+</button></div>
         <button class="add ${n ? 'in' : ''}" data-add="${p.id}" ${open ? '' : 'disabled'}>
@@ -232,36 +232,47 @@ function openDetail(id, { push = true } = {}) {
   const sim = similar(p);
   const phs = (p.photos && p.photos.length ? p.photos : (p.photo ? [p.photo] : [])).filter(Boolean).slice(0, 3);
   const url = (() => { const u = new URL(location.href); u.searchParams.set('e', (EV?.code || '').toLowerCase()); u.searchParams.set('p', p.id); return u.toString(); })();
+  const SV = {
+    cart: '<svg viewBox="0 0 24 24"><path d="M3 4h2l2.4 11.2a1 1 0 0 0 1 .8h8.9a1 1 0 0 0 1-.8L20 8H6"/><circle cx="9" cy="20" r="1.4"/><circle cx="17" cy="20" r="1.4"/></svg>',
+    wa: '<svg viewBox="0 0 24 24"><path d="M20.5 11.7a8.5 8.5 0 0 1-12.6 7.4L3.5 20.5l1.4-4.3a8.5 8.5 0 1 1 15.6-4.5z"/><path d="M9 8.5c.3 2.6 2.4 5 5.3 5.8l1.3-1.4 2 1"/></svg>',
+    alert: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 16.5v.5"/></svg>',
+    cal: '<svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>',
+  };
+  const desc = p.description || '';
+  const longDesc = desc.length > 160 || desc.split('\n').length > 3;
+  const limited = /limited|terbatas|stok/i.test(p.badge || '');
+  const np = Number(p.normalPrice) > Number(p.price) ? Number(p.normalPrice) : 0;
+  const off = np ? Math.round((1 - Number(p.price) / np) * 100) : 0;
+  const waOrder = waLink(`Halo ${INFO.business || 'admin'}, saya mau pesan 🙏\n*${p.name}*${p.brand ? ' (' + p.brand + ')' : ''}\nJumlah: ${qty} × ${fmtIDR(p.price)} = ${fmtIDR(qty * p.price)}\n${EV ? 'Jastip ' + EV.name + '\n' : ''}${url}`);
+  const note = limited ? `<div class="pd3-note">${SV.alert}<span><b>Stok terbatas</b>Segera pesan sebelum kehabisan.</span></div>`
+    : EV && EV.poEnd ? `<div class="pd3-note">${SV.cal}<span><b>${open ? 'PO ditutup ' : 'PO berakhir '}${esc(fmtRange(null, EV.poEnd).replace('Sampai ', ''))}</b>${open ? 'Pesan sebelum PO ditutup.' : 'Tunggu jadwal berikutnya.'}</span></div>` : '';
   openSheet(`
-    <div class="pd">
-      <div class="pd-ph">${phs.length ? `<div class="pd-track">${phs.map((ph, i) => `<div class="pd-slide" data-zoom="${esc(photoUrl(ph))}"><img src="${esc(photoUrl(ph))}" alt="${esc(p.name)} ${i + 1}" ${i ? 'loading="lazy"' : ''} onerror="this.remove()"></div>`).join('')}</div>` : '<span>📦</span>'}
-        ${p.badge ? `<span class="ribbon">${esc(p.badge)}</span>` : ''}
-        <button class="pd-x" data-close aria-label="Tutup">✕</button>
-        ${phs.length > 1 ? `<span class="pd-count">1 / ${phs.length}</span>` : ''}
-        ${phs.length ? '<span class="pd-zoom">🔍 Ketuk untuk perbesar</span>' : ''}</div>
-      ${phs.length > 1 ? `<div class="pd-thumbs">${phs.map((ph, i) => `<button type="button" class="pd-th ${i ? '' : 'on'}" data-pdi="${i}" aria-label="Foto ${i + 1}"><img src="${esc(photoUrl(ph))}" alt="" loading="lazy" onerror="this.remove()"></button>`).join('')}</div>` : ''}
-      <div class="pd-body">
-        ${p.brand ? `<button class="pd-br" data-brand-pd="${esc(p.brand)}">${esc(p.brand)} ›</button>` : ''}
-        <h2 class="pd-nm">${esc(p.name)}</h2>
-        <div class="pd-tags">${p.category ? `<span>${esc(c?.icon || '🛍️')} ${esc(p.category)}</span>` : ''}${EV ? `<span>${esc(EV.flag || '✈️')} Jastip ${esc(EV.name)}</span>` : ''}</div>
-        <div class="pd-pr">${fmtIDR(p.price)}<small>/pcs · sudah termasuk fee jastip</small></div>
-        ${p.description ? `<h3>Deskripsi</h3><p class="pd-ds">${esc(p.description)}</p>` : ''}
-        ${EV ? `<div class="pd-info">
-          ${EV.poStart || EV.poEnd ? `<div><i>🗓️</i><span><small>Periode PO</small>${esc(fmtRange(EV.poStart, EV.poEnd))}</span></div>` : ''}
-          ${EV.eta ? `<div><i>📦</i><span><small>Estimasi tiba</small>${esc(EV.eta)}</span></div>` : ''}
-          ${EV.note ? `<div><i>ℹ️</i><span><small>Info PO</small>${esc(EV.note)}</span></div>` : ''}
-          <div><i>🛡️</i><span><small>Garansi</small>100% original, dibeli langsung di toko</span></div></div>` : ''}
-        ${waNum() ? `<a class="pd-wa" target="_blank" rel="noopener" href="${esc(waLink(`Halo ${INFO.business || 'admin'}, saya mau tanya produk ini 🙏\n*${p.name}*${p.brand ? ' (' + p.brand + ')' : ''} — ${fmtIDR(p.price)}\n${url}`))}">💬 Tanya produk ini via WhatsApp</a>` : ''}
-        ${sim.length ? `<h3>Produk serupa</h3><div class="pd-sim">${sim.map((x) => `<button class="sim" data-open="${x.id}">
-          <span class="sim-ph">${x.photo ? `<img src="${esc(photoUrl(x.photo))}" alt="" loading="lazy" onerror="this.remove()">` : '📦'}</span>
-          <span class="sim-nm">${esc(x.name)}</span><b>${fmtIDR(x.price)}</b></button>`).join('')}</div>` : ''}
+    <div class="pd3">
+      <button class="pd3-x" data-close aria-label="Tutup">✕</button>
+      <div class="pd3-gal">
+        <div class="pd3-ph">${phs.length ? `<div class="pd-track">${phs.map((ph, i) => `<div class="pd-slide" data-zoom="${esc(photoUrl(ph))}"><img src="${esc(photoUrl(ph))}" alt="${esc(p.name)} ${i + 1}" ${i ? 'loading="lazy"' : ''} onerror="this.remove()"></div>`).join('')}</div>` : '<span class="pd3-noimg">📦</span>'}
+          ${p.badge ? `<span class="ribbon">${esc(p.badge)}</span>` : ''}</div>
+        ${phs.length > 1 ? `<div class="pd3-thumbs">${phs.map((ph, i) => `<button type="button" class="pd-th ${i ? '' : 'on'}" data-pdi="${i}" aria-label="Foto ${i + 1}"><img src="${esc(photoUrl(ph))}" alt="" loading="lazy" onerror="this.remove()"></button>`).join('')}</div>` : ''}
       </div>
-      <div class="pd-buy">
-        <button class="heart pd-heart" data-like="${p.id}" aria-label="Simpan">${likes.has(p.id) ? '♥' : '♡'}</button>
-        <div class="step"><button data-dec="${p.id}" aria-label="Kurangi">−</button><span>${qty}</span><button data-inc="${p.id}" aria-label="Tambah">+</button></div>
-        <button class="add ${n ? 'in' : ''}" data-add="${p.id}" ${open ? '' : 'disabled'}>${open ? (n ? `✓ Di keranjang · ${fmtIDR(n * p.price)}` : `+ Keranjang · ${fmtIDR(qty * p.price)}`) : 'PO ditutup'}</button>
+      <div class="pd3-info">
+        ${p.brand ? `<button class="pd3-brand" data-brand-pd="${esc(p.brand)}"><span class="av">${esc(p.brand.trim()[0] || '•')}</span>${esc(p.brand)} <i>›</i></button>` : ''}
+        <h2 class="pd3-nm">${esc(p.name)}</h2>
+        ${p.category ? `<div class="pd3-sub">${esc(p.category)}</div>` : ''}
+        <div class="pd3-pr"><b>${fmtIDR(p.price)}</b>${np ? `<s>${fmtIDR(np)}</s><span class="off">-${off}%</span>` : ''}</div>
+        ${desc ? `<div class="pd3-ds ${longDesc ? 'clamp' : ''}" id="pdDesc">${esc(desc)}</div>${longDesc ? '<button type="button" class="pd3-more" id="pdMore">Selengkapnya ▾</button>' : ''}` : ''}
+        <div class="pd3-qtyrow">
+          <div class="pd3-qty"><label>Jumlah</label>
+            <div class="step"><button data-dec="${p.id}" aria-label="Kurangi">−</button><span>${qty}</span><button data-inc="${p.id}" aria-label="Tambah">+</button></div></div>
+          ${note}
+        </div>
+        <div class="pd3-cta">
+          <button class="pd3-add ${n ? 'in' : ''}" data-add="${p.id}" ${open ? '' : 'disabled'}>${SV.cart}<span>${open ? (n ? `Di keranjang (${n})` : '+ Keranjang') : 'PO ditutup'}</span></button>
+          ${waNum() ? `<a class="pd3-wa" target="_blank" rel="noopener" href="${esc(waOrder)}">${SV.wa}<span><span class="lg">Pesan via </span>WhatsApp</span></a>` : ''}
+        </div>
       </div>
     </div>`, 'detail');
+  const more = $('#pdMore', sheet);
+  if (more) more.onclick = (e) => { e.stopPropagation(); const d = $('#pdDesc', sheet); d.classList.toggle('clamp'); more.textContent = d.classList.contains('clamp') ? 'Selengkapnya ▾' : 'Tutup ▴'; };
   sheet.dataset.pid = p.id;
   const track = $('.pd-track', sheet);
   if (track && phs.length > 1) {

@@ -318,7 +318,7 @@ const MAP = {
   products: [['id', 'id'], ['name', 'name', 'str'], ['brand', 'brand', 'str'], ['description', 'description', 'str'],
     ['buyPrice', 'buy_price', 'num'], ['buyCur', 'buy_cur', 'cur'], ['sellPrice', 'sell_price', 'num'], ['weight', 'weight', 'num'],
     ['photo', 'photo', 'nul'], ['note', 'note', 'str'], ['published', 'published', 'bool'], ['sort', 'sort', 'int'], ['createdAt', 'created_at', 'ts'],
-    ['category', 'category', 'str'], ['events', 'events', 'arr'], ['badge', 'badge', 'str'], ['featured', 'featured', 'boolf'], ['photos', 'photos', 'arr']],
+    ['category', 'category', 'str'], ['events', 'events', 'arr'], ['badge', 'badge', 'str'], ['featured', 'featured', 'boolf'], ['photos', 'photos', 'arr'], ['normalPrice', 'normal_price', 'num']],
   customers: [['id', 'id'], ['name', 'name', 'str'], ['phone', 'phone', 'str'], ['city', 'city', 'str'], ['address', 'address', 'str'],
     ['note', 'note', 'str'], ['createdAt', 'created_at', 'ts']],
   orders: [['id', 'id'], ['code', 'code', 'str'], ['customerId', 'customer_id', 'nul'], ['trip', 'trip', 'str'], ['status', 'status', 'str'],
@@ -2159,6 +2159,8 @@ async function viewProductForm(id) {
       <div class="field"><label>Harga jual (Rp)</label>
         <div class="row"><input class="input grow" id="pSell" data-money inputmode="decimal" value="${esc(p.sellPrice)}">${ro ? '' : '<button class="btn sm" id="pCalc" type="button">Hitung</button>'}</div>
         <div class="help" id="pHelp"></div></div>
+      <div class="field"><label>Harga normal / coret (Rp) <span class="muted">— opsional</span></label><input class="input" id="pNormal" data-money inputmode="decimal" value="${esc(p.normalPrice || '')}" placeholder="mis. 1.250.000">
+        <div class="help">Isi bila ada harga toko yang lebih mahal: web menampilkan harga coret & persen hemat.</div></div>
       <div class="toggle-row"><span>Tampilkan di web katalog</span><label class="switch"><input type="checkbox" id="pPub" ${p.published !== false ? 'checked' : ''}><span></span></label></div>
       ${isShopper() ? '' : `<div class="field"><label>Catatan internal</label><textarea class="input" id="pNote">${esc(p.note)}</textarea></div>`}
     </section></fieldset>
@@ -2186,7 +2188,7 @@ async function viewProductForm(id) {
   if (ro) return;
   if (draft) FORM_DIRTY = true;
   const readForm = () => ({ name: $('#pName').value, brand: $('#pBrand').value, weight: $('#pWeight').value, description: $('#pDesc').value, buyPrice: $('#pBuy') ? $('#pBuy').value : p.buyPrice, buyCur: $('#pCur') ? $('#pCur').value : p.buyCur,
-    sellPrice: $('#pSell').value, note: $('#pNote') ? $('#pNote').value : p.note, published: $('#pPub').checked, category: $('#pCat').value, badge: $('#pBadge').value, featured: $('#pFeat').checked, photo: p.photos[0] || '', photos: p.photos, events: p.events });
+    sellPrice: $('#pSell').value, normalPrice: $('#pNormal') ? $('#pNormal').value : p.normalPrice, note: $('#pNote') ? $('#pNote').value : p.note, published: $('#pPub').checked, category: $('#pCat').value, badge: $('#pBadge').value, featured: $('#pFeat').checked, photo: p.photos[0] || '', photos: p.photos, events: p.events });
   const saveDraft = () => { clearTimeout(saveDraft._t); saveDraft._t = setTimeout(() => { if ($('#pName')) Draft.set(dKey, { id: p.id, p: readForm() }); }, 250); };
   const fs = $('fieldset', view); fs.addEventListener('input', saveDraft); fs.addEventListener('change', saveDraft);
   const dd = $('#draftDrop'); if (dd) dd.onclick = () => { Draft.del(dKey); FORM_DIRTY = false; route(); };
@@ -2247,7 +2249,7 @@ async function viewProductForm(id) {
   };
   $('#pSave').onclick = async () => {
     const name = $('#pName').value.trim(); if (!name) return toast('Nama produk wajib diisi');
-    Object.assign(p, { name, brand: $('#pBrand').value.trim(), weight: $('#pWeight').value, description: $('#pDesc').value.trim(), buyPrice: $('#pBuy').value, buyCur: $('#pCur').value, sellPrice: $('#pSell').value, note: $('#pNote').value, published: $('#pPub').checked,
+    Object.assign(p, { name, brand: $('#pBrand').value.trim(), weight: $('#pWeight').value, description: $('#pDesc').value.trim(), buyPrice: $('#pBuy').value, buyCur: $('#pCur').value, sellPrice: $('#pSell').value, normalPrice: $('#pNormal') ? $('#pNormal').value : p.normalPrice, note: $('#pNote').value, published: $('#pPub').checked,
       category: $('#pCat').value, badge: $('#pBadge').value, featured: $('#pFeat').checked, photo: p.photos[0] || '', photos: p.photos.slice(0, 3) });
     await saveRow('products', p);
     Draft.del(dKey); FORM_DIRTY = false;
