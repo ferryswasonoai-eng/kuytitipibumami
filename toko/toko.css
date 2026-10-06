@@ -321,3 +321,96 @@ dialog.sheet.sheet-pd[open] { display: flex; }
 .pd-th { width: 58px; height: 58px; border-radius: 12px; border: 2px solid var(--line-2); padding: 0; overflow: hidden; background: #f3f3f5; cursor: pointer; flex-shrink: 0; }
 .pd-th img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .pd-th.on { border-color: var(--red); }
+
+/* ---------- Detail produk v3: kartu side-by-side (HP & laptop) ---------- */
+dialog.sheet.sheet-pd { max-width: 920px; width: calc(100% - 24px); margin: auto; border-radius: 22px; background: #fff; box-shadow: 0 30px 60px -20px rgba(16,18,30,.45); }
+dialog.sheet.sheet-pd::backdrop { background: rgba(16,18,30,.45); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+.card .pr s { font-size: .74rem; font-weight: 500; color: var(--muted); margin-left: 6px; }
+.pd3 { --rd: #e8364a; --rd2: #f2557a; --pk: #fff1f3; --pk2: #fcd9df; --navy: #16244f;
+  position: relative; display: grid; grid-template-columns: 1.08fr 1fr; gap: 22px; padding: 18px; }
+.pd3 svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+.pd3-x { position: absolute; top: 12px; right: 12px; z-index: 4; width: 32px; height: 32px; border-radius: 50%; border: 0; background: #f1f2f5; color: var(--ink); font-size: .85rem; cursor: pointer; }
+.pd3-x:focus { outline: none; }
+.pd3-gal { min-width: 0; }
+.pd3-ph { position: relative; aspect-ratio: 1 / 1; border-radius: 16px; overflow: hidden; background: linear-gradient(160deg, #f7f4f2, #eef0f3); display: grid; place-items: center; }
+.pd3-ph .pd-track { position: absolute; inset: 0; }
+.pd3-ph .pd-slide img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.pd3-noimg { font-size: 3rem; }
+.pd3-ph .ribbon { top: 12px; left: 12px; }
+.pd3-thumbs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 8px; }
+.pd3-thumbs .pd-th { width: auto; height: auto; aspect-ratio: 4 / 3; border-radius: 10px; border: 2px solid transparent; }
+.pd3-thumbs .pd-th.on { border-color: #4a6cf7; }
+.pd3-info { display: flex; flex-direction: column; min-width: 0; padding-top: 2px; }
+.pd3-brand { align-self: flex-start; display: inline-flex; align-items: center; gap: 8px; border: 0; background: none; padding: 0; margin-right: 40px; font: 600 .82rem var(--font); color: var(--ink); cursor: pointer; }
+.pd3-brand .av { width: 32px; height: 32px; border-radius: 50%; background: var(--pk); border: 1px solid var(--pk2); color: var(--rd); display: grid; place-items: center; font-weight: 800; text-transform: uppercase; font-size: .82rem; }
+.pd3-brand i { font-style: normal; color: var(--muted); }
+.pd3-nm { font-size: 1.5rem; font-weight: 800; color: var(--navy); line-height: 1.2; letter-spacing: -.015em; margin: 12px 0 2px; }
+.pd3-sub { color: var(--ink-2); font-size: .95rem; }
+.pd3-pr { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; margin: 12px 0 2px; }
+.pd3-pr b { font-size: 1.8rem; font-weight: 800; color: var(--rd); letter-spacing: -.01em; }
+.pd3-pr s { color: var(--muted); font-size: .92rem; }
+.pd3-pr .off { background: var(--pk); color: var(--rd); font-weight: 700; font-size: .85rem; padding: 4px 10px; border-radius: 999px; }
+.pd3-ds { white-space: pre-line; color: var(--ink-2); font-size: .86rem; line-height: 1.55; margin-top: 8px; }
+.pd3-ds.clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.pd3-more { align-self: flex-start; border: 0; background: none; color: var(--rd); font: 600 .78rem var(--font); padding: 3px 0; cursor: pointer; }
+.pd3-qtyrow { display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: end; margin-top: auto; padding-top: 14px; }
+.pd3-qty label { display: block; font-size: .82rem; font-weight: 700; margin-bottom: 6px; }
+.pd3-qty .step { grid-template-columns: 40px 44px 40px; height: 44px; border-radius: 12px; background: #fff; }
+.pd3-note { display: flex; gap: 8px; align-items: center; background: var(--pk); border: 1px solid var(--pk2); color: var(--rd); border-radius: 12px; padding: 7px 10px; min-height: 44px; }
+.pd3-note b { display: block; font-size: .76rem; }
+.pd3-note span { font-size: .68rem; color: var(--ink-2); line-height: 1.3; }
+.pd3-cta { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+.pd3-add, .pd3-wa { height: 50px; border-radius: 13px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; font: 700 .92rem var(--font); cursor: pointer; text-decoration: none; padding: 0 10px; white-space: nowrap; }
+.pd3-add { border: 0; color: #fff; background: linear-gradient(90deg, var(--rd), var(--rd2)); box-shadow: 0 10px 20px -12px rgba(232,54,74,.9); }
+.pd3-add.in { background: linear-gradient(90deg, #13865a, #1faa6a); }
+.pd3-add[disabled] { opacity: .5; cursor: not-allowed; }
+.pd3-wa { border: 1.5px solid var(--pk2); color: var(--rd); background: #fff; }
+.pd3-wa svg { color: #e8364a; }
+/* produk serupa (di bawah, lebar penuh) */
+.pd3-sim { grid-column: 1 / -1; border-top: 1px solid var(--line); padding-top: 14px; margin-top: 2px; }
+.pd3-simhead { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.pd3-simhead h3 { font-size: 1.02rem; font-weight: 800; color: var(--navy); margin: 0; }
+.pd3-simhead button { border: 0; background: none; color: var(--rd); font: 600 .8rem var(--font); cursor: pointer; padding: 0; }
+.pd3-simrow { display: grid; grid-auto-flow: column; grid-auto-columns: calc((100% - 36px) / 5); gap: 9px; overflow-x: auto; padding-bottom: 4px; scroll-snap-type: x mandatory; scrollbar-width: thin; }
+.pd3-simrow .sim { scroll-snap-align: start; border-radius: 14px; }
+.pd3-simrow .sim-br { font-size: .6rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); padding: 2px 9px 0; }
+.pd3-simrow .sim b { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; color: var(--rd); }
+.pd3-simrow .sim s { font-size: .66rem; font-weight: 500; color: var(--muted); }
+/* HP: susunan atas-bawah (foto di atas, info di bawah) */
+@media (max-width: 640px) {
+  dialog.sheet.sheet-pd { width: 100%; max-width: 100%; margin: auto auto 0; border-radius: 22px 22px 0 0; max-height: 94vh; }
+  .pd3 { grid-template-columns: 1fr; gap: 12px; padding: 12px 14px 0; }
+  .pd3-x { top: 20px; right: 22px; background: rgba(255,255,255,.92); box-shadow: 0 4px 12px -6px rgba(0,0,0,.4); }
+  .pd3-ph { border-radius: 16px; }
+  .pd3-thumbs { grid-template-columns: repeat(4, 64px); gap: 8px; }
+  .pd3-brand { margin-right: 0; }
+  .pd3-nm { font-size: 1.28rem; margin-top: 8px; }
+  .pd3-pr b { font-size: 1.55rem; }
+  .pd3-ds { font-size: .88rem; }
+  .pd3-qtyrow { grid-template-columns: 1fr; gap: 10px; padding-top: 12px; }
+  .pd3-qty { display: flex; align-items: center; justify-content: space-between; }
+  .pd3-qty label { margin: 0; }
+  .pd3-cta { position: sticky; bottom: 0; z-index: 3; background: #fff; margin: 10px -14px 0; padding: 10px 14px calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); }
+  .pd3-add, .pd3-wa { height: 48px; font-size: .88rem; }
+  .pd3-sim { padding: 12px 0 16px; }
+  .pd3-simrow { grid-auto-columns: 42%; }
+}
+@media (max-width: 420px) { .pd3-wa .lg { display: none; } }
+
+/* ---------- Brand Favorit sebagai slicer (di bawah kategori) ---------- */
+.brand-bar { margin: 4px 0 6px; }
+.brand-bar-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.brand-bar-head h2 { font-size: 1.05rem; font-weight: 800; padding-left: 10px; border-left: 4px solid var(--red); line-height: 1.1; }
+.brand-reset { border: 0; background: none; color: var(--red); font: 600 .8rem var(--font); cursor: pointer; }
+.brand-bar .brands { display: flex; gap: 10px; overflow-x: auto; padding: 2px 2px 8px; scrollbar-width: none; scroll-snap-type: x proximity; }
+.brand-bar .brands::-webkit-scrollbar { display: none; }
+.brand-bar .brand { flex: 0 0 auto; min-width: 128px; height: 52px; padding: 0 18px; font-size: .86rem; border-radius: 12px; box-shadow: var(--shadow); scroll-snap-align: start; }
+@media (min-width: 1000px) { .brand-bar .brands { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); overflow: visible; } .brand-bar .brand { min-width: 0; } }
+@media (max-width: 640px) { .brand-bar .brand { min-width: 0; height: 40px; padding: 0 14px; font-size: .76rem; border-radius: 10px; } .brand-bar-head h2 { font-size: .98rem; } }
+
+/* ---------- Cara Order: kartu bergambar ---------- */
+.steps-vis { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 26px; align-items: center; }
+.steps-vis li { position: relative; }
+.steps-vis img { display: block; width: 100%; height: auto; filter: drop-shadow(0 14px 22px rgba(232,54,74,.12)); }
+.steps-vis li:not(:last-child)::after { content: "›"; position: absolute; right: -24px; top: 50%; transform: translateY(-50%); width: 22px; height: 22px; border-radius: 50%; background: #fff; color: var(--red); display: grid; place-items: center; font-weight: 800; font-size: 1.05rem; line-height: 1; box-shadow: 0 4px 10px -4px rgba(232,54,74,.5); z-index: 1; }
+@media (max-width: 860px) { .steps-vis { grid-template-columns: repeat(2, 1fr); gap: 14px; } .steps-vis li:not(:last-child)::after { display: none; } }
