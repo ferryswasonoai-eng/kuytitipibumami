@@ -626,6 +626,7 @@ function finalizeOrder(o) {
 }
 
 /* Rerender saat ada perubahan dari admin lain */
+const BOOT_AT = Date.now();
 let FORM_OPEN = false;
 let FORM_DIRTY = false;  // ada isian yang belum disimpan → jangan gambar ulang layar
 const inForm = () => FORM_OPEN || FORM_DIRTY || (document.activeElement && view.contains(document.activeElement) && document.activeElement.matches('input, textarea, select'));
@@ -633,7 +634,7 @@ async function onDataChanged() {
   await loadEvents();
   updateBadge();
   renderChrome();
-  if (inForm()) { if (!onDataChanged._told && Date.now() - (Sync.lastLocal || 0) > 5000) { onDataChanged._told = true; toast('Ada data baru dari admin lain — tampil setelah Anda selesai'); setTimeout(() => { onDataChanged._told = false; }, 20000); } return; }
+  if (inForm()) { if (!onDataChanged._told && Date.now() - (Sync.lastLocal || 0) > 5000 && Date.now() - BOOT_AT > 10000) { onDataChanged._told = true; toast('Ada data baru dari admin lain — tampil setelah Anda selesai'); setTimeout(() => { onDataChanged._told = false; }, 20000); } return; }
   if (sheet.open || !ME || document.body.classList.contains('noauth')) return;
   clearTimeout(onDataChanged._t);
   onDataChanged._t = setTimeout(() => {
@@ -987,7 +988,7 @@ function pickEventSheet() {
 function eventHero(ev, extra = '') {
   if (!ev) return `<section class="ev-hero"><div class="ev-hero-in"><span class="ev-pill">EVENT</span><h1>Belum ada event</h1>
     <p>${isOwner() ? 'Buat event jastip pertama (mis. Bangkok, Jepang).' : 'Minta owner membuat event jastip.'}</p>${isOwner() ? '<a class="btn primary sm" href="#/event/baru" style="width:auto;margin-top:10px">+ Buat event</a>' : ''}</div></section>`;
-  const bg = ev.banner ? `<div class="ev-hero-bg" style="background-image:url('${esc(photoUrl(ev.banner))}')"></div>` : `<div class="ev-hero-bg fb"></div><div class="ev-hero-flag">${esc(ev.flag || '✈️')}</div>`;
+  const bg = ev.banner ? `<div class="ev-hero-bg" style="background-image:url('${esc(photoCache.get(ev.banner) || photoUrl(ev.banner))}')"></div>` : `<div class="ev-hero-bg fb"></div><div class="ev-hero-flag">${esc(ev.flag || '✈️')}</div>`;
   return `<section class="ev-hero" style="--ev:${esc(ev.color || '#ef3b2d')}">${bg}<div class="ev-hero-fade"></div>
     <div class="ev-hero-in"><span class="ev-pill">${esc(ev.title || 'OPEN JASTIP')}</span>
       <h1${(ev.name || "").length > 12 ? " class=\"long\"" : ""}>${esc(ev.name)}</h1>
@@ -1218,12 +1219,18 @@ async function viewEventForm(id) {
   if (id && !e) { location.replace('#/event'); return; }
   e = e ? { ...e } : { id: 'ev_' + uid(), code: '', name: '', title: 'OPEN JASTIP', country: '', flag: '', currency: 'THB', lockedRate: '', feeType: 'percent', feeValue: 10,
     shipPerKg: 0, rounding: 1000, poStart: '', poEnd: '', eta: '', note: '', tagline: 'Produk original langsung dari tokonya', color: '#ef3b2d', banner: '', status: 'draft', sort: EVENTS.length + 1, createdAt: Date.now() };
+  // draf: isian & banner tetap aman walau Android menutup aplikasi saat membuka galeri/kamera
+  const dKey = 'event:' + (id || 'new');
+  const draft = Draft.get(dKey);
+  if (draft) { if (!id && draft.id) e.id = draft.id; Object.assign(e, draft.e || {}); }
+  if (e.banner && !photoCache.get(e.banner)) { const ph = await DB.get('photos', e.banner); if (ph && ph.data) photoCache.set(e.banner, ph.data); }
   const COLORS = ['#ef3b2d', '#1d3a8a', '#c8102e', '#0f766e', '#7c3aed', '#d97706', '#be185d', '#111827'];
   const FLAGS = ['🇹🇭', '🇯🇵', '🇰🇷', '🇦🇺', '🇸🇬', '🇲🇾', '🇨🇳', '🇭🇰', '🇹🇼', '🇻🇳', '🇺🇸', '🇬🇧', '🇫🇷', '🇹🇷', '🇸🇦', '🇮🇩'];
   view.innerHTML = `
     <button class="back" onclick="location.hash='#/event'">‹ Event</button>
     <p class="eyebrow">${id ? 'Ubah event' : 'Event baru'}</p>
     <h1 class="page-title">${esc(e.name || 'Event jastip baru')}</h1>
+    ${draft ? `<div class="alert warn" id="draftBar" style="display:flex;align-items:center;gap:10px;justify-content:space-between;margin-bottom:12px"><span>📝 Isian yang belum disimpan dipulihkan.</span><button class="btn sm" type="button" id="draftDrop">Buang</button></div>` : ''}
     <div id="evPreview"></div>
     <section class="card">
       <h2>Identitas event</h2>
@@ -1277,8 +1284,21 @@ async function viewEventForm(id) {
   ['eName', 'eTitle', 'eStart', 'eEnd', 'eStatus', 'eCur', 'eFeeType', 'eFee'].forEach((k) => { $('#' + k).addEventListener('input', preview); $('#' + k).addEventListener('change', preview); });
   $$('[data-flag]').forEach((b) => b.onclick = () => { e.flag = b.dataset.flag; $$('[data-flag]').forEach((x) => x.classList.toggle('on', x === b)); preview(); });
   $$('[data-color]').forEach((b) => b.onclick = () => { e.color = b.dataset.color; $$('[data-color]').forEach((x) => x.classList.toggle('on', x === b)); preview(); });
-  $('#eBanner').onchange = async (ev2) => { if (ev2.target.dataset.addPhoto) { const ids = await savePhotos([ev2.target.files[0]]); e.banner = ids[0]; drawBanner(); } };
-  $('#eBanner').addEventListener('click', (ev2) => { const rm = ev2.target.closest('[data-rm-photo]'); if (rm) { ev2.preventDefault(); e.banner = ''; drawBanner(); } });
+  const readEv = () => ({ name: $('#eName').value, code: $('#eCode').value, title: $('#eTitle').value, country: $('#eCountry').value, tagline: $('#eTag').value, poStart: $('#eStart').value, poEnd: $('#eEnd').value,
+    status: $('#eStatus').value, eta: $('#eEta').value, note: $('#eNote').value, currency: $('#eCur').value, lockedRate: $('#eRate').value, feeType: $('#eFeeType').value, feeValue: $('#eFee').value,
+    shipPerKg: $('#eShip').value, rounding: $('#eRound').value, flag: e.flag, color: e.color, banner: e.banner });
+  const saveDraft = () => { clearTimeout(saveDraft._t); saveDraft._t = setTimeout(() => { if ($('#eName')) Draft.set(dKey, { id: e.id, e: readEv() }); }, 250); };
+  view.querySelectorAll('section.card').forEach((sec) => { sec.addEventListener('input', saveDraft); sec.addEventListener('change', saveDraft); });
+  $$('[data-flag], [data-color]').forEach((b) => b.addEventListener('click', () => { FORM_DIRTY = true; saveDraft(); }));
+  if (draft) FORM_DIRTY = true;
+  const dd = $('#draftDrop'); if (dd) dd.onclick = () => { Draft.del(dKey); FORM_DIRTY = false; route(); };
+  $('#eBanner').onchange = async (ev2) => {
+    if (!ev2.target.dataset.addPhoto || !ev2.target.files || !ev2.target.files[0]) return;
+    FORM_DIRTY = true;
+    try { const ids = await savePhotos([ev2.target.files[0]]); e.banner = ids[0]; await drawBanner(); saveDraft(); toast('Banner ditambahkan — tekan Simpan event'); }
+    catch (er) { toast('Foto gagal dibaca: ' + (er.message || er), 4000); }
+  };
+  $('#eBanner').addEventListener('click', (ev2) => { const rm = ev2.target.closest('[data-rm-photo]'); if (rm) { ev2.preventDefault(); e.banner = ''; drawBanner(); saveDraft(); } });
   $('#eSave').onclick = async () => {
     const name = $('#eName').value.trim(); const code = $('#eCode').value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (!name || !code) return toast('Nama & kode event wajib diisi');
@@ -1286,7 +1306,7 @@ async function viewEventForm(id) {
     Object.assign(e, { name, code, title: $('#eTitle').value, country: $('#eCountry').value.trim(), tagline: $('#eTag').value.trim(), poStart: $('#eStart').value, poEnd: $('#eEnd').value,
       status: $('#eStatus').value, eta: $('#eEta').value.trim(), note: $('#eNote').value.trim(), currency: $('#eCur').value, lockedRate: num($('#eRate').value) || '',
       feeType: $('#eFeeType').value, feeValue: num($('#eFee').value), shipPerKg: num($('#eShip').value), rounding: num($('#eRound').value) });
-    await saveRow('events', e); await loadEvents();
+    await saveRow('events', e); await loadEvents(); Draft.del(dKey); FORM_DIRTY = false;
     if (!CUR_EV) await setCurEv(e.id);
     renderChrome(); toast('Event disimpan ✓'); location.hash = '#/event';
   };
