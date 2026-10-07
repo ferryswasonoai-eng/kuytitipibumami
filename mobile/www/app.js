@@ -291,9 +291,10 @@ const itemSellIDR = (it) => it.sellCur === 'IDR' || !it.sellCur ? num(it.sellPri
   : (num(it.sellIDR) || num(it.sellPrice) * rateOf(it.sellCur));
 const liveSellIDR = (it) => it.sellCur === 'IDR' || !it.sellCur ? num(it.sellPrice) : num(it.sellPrice) * rateOf(it.sellCur);
 function orderTotals(o, paid = 0) {
-  let subtotal = 0, modal = 0, qty = 0;
+  let subtotal = 0, modal = 0, qty = 0, soldOutValue = 0, soldOutCount = 0;
   (o.items || []).forEach((it) => {
     const q = num(it.qty) || 0;
+    if (it.soldOut) { soldOutValue += itemSellIDR(it) * q; soldOutCount += 1; return; }  // barang habis tidak ditagih
     qty += q;
     subtotal += itemSellIDR(it) * q;
     modal += num(it.buyPrice) * itemRate(it) * q;
@@ -302,7 +303,14 @@ function orderTotals(o, paid = 0) {
   const discount = num(o.discount);
   const total = Math.max(0, subtotal + shipping - discount);
   paid = num(paid);
-  return { qty, subtotal, shipping, discount, total, paid, due: Math.max(0, total - paid), modal, profit: subtotal - discount - modal };
+  return { qty, subtotal, shipping, discount, total, paid, due: Math.max(0, total - paid), over: Math.max(0, paid - total), modal, profit: subtotal - discount - modal, soldOutValue, soldOutCount };
+}
+// status otomatis: semua barang sudah dibeli / habis → "Sudah dibeli"
+function autoBoughtStatus(o) {
+  const items = o.items || [];
+  const done = items.length && items.every((x) => x.bought || x.soldOut) && items.some((x) => x.bought);
+  if (done && o.status === 'baru') o.status = 'dibeli';
+  if (!done && o.status === 'dibeli') o.status = 'baru';
 }
 async function paidMap() {
   const m = {};
@@ -1741,12 +1749,51 @@ function readBanks(keepEmpty = false) {
     .filter((b) => keepEmpty || b.number);
 }
 const bankLines = () => (S.banks || []).filter((b) => b.number).map((b) => `${b.bank || 'Rek.'} ${b.number}${b.name ? ' a.n. ' + b.name : ''}`);
+function soldOutMessage(o, cu, paid = 0) {
+  const t = orderTotals(o, paid);
+  const ev = evById(o.eventId);
+  const so = o.items.filter((it) => it.soldOut); const ok = o.items.filter((it) => !it.soldOut);
+  const L = [];
+  L.push(`Halo Kak ${(cu?.name || '').split(' ')[0] || ''} 🙏`.replace('Kak  ', 'Kak '));
+  L.push(`Update pesanan *#${o.code}*${ev ? ` (Jastip ${ev.name})` : o.trip ? ` (${o.trip})` : ''}:`);
+  L.push('');
+  L.push('Mohon maaf, barang berikut *HABIS / sold out* di toko:');
+  so.forEach((it) => L.push(`❌ ${it.name}${it.note ? ` (${it.note})` : ''} × ${num(it.qty)} — ${fmtIDR(itemSellIDR(it) * num(it.qty))}`));
+  if (ok.length) {
+    L.push(''); L.push('Barang yang tetap kami belikan:');
+    ok.forEach((it) => L.push(`✅ ${it.name}${it.note ? ` (${it.note})` : ''} × ${num(it.qty)} — ${fmtIDR(itemSellIDR(it) * num(it.qty))}`));
+    L.push(''); L.push(`*Total pesanan sekarang: ${fmtIDR(t.total)}*`);
+    if (t.paid) L.push(`Sudah dibayar: ${fmtIDR(t.paid)}`);
+    if (t.over > 0) L.push(`Kelebihan bayar *${fmtIDR(t.over)}* akan kami *refund*, atau bisa dialihkan ke produk lain — Kakak pilih yang mana? 😊`);
+    else if (t.due > 0) L.push(`Sisa tagihan: *${fmtIDR(t.due)}*`);
+  } else {
+    L.push(''); L.push(t.paid ? `Pembayaran Kakak *${fmtIDR(t.paid)}* akan kami *refund* penuh, atau bisa dialihkan ke produk lain — Kakak pilih yang mana? 😊` : 'Pesanan ini kami batalkan ya Kak.');
+  }
+  L.push(''); L.push('Mohon maaf atas ketidaknyamanannya 🙏');
+  const lk = trackLink(o); if (lk) L.push('Lacak pesanan: ' + lk);
+  L.push(''); L.push(S.business || '');
+  return L.join('\n').trim();
+}
+function soldOutSheet(o, cu, paid, done) {
+  openSheet(`<h3>Kabari customer</h3>
+    <p class="hint">Pesan otomatis untuk ${esc(cu?.name || 'customer')} — boleh diubah sebelum dikirim.</p>
+    <textarea class="input" id="soMsg" rows="12">${esc(soldOutMessage(o, cu, paid))}</textarea>
+    <div class="btn-col" style="margin-top:12px">
+      <button class="btn wa" id="soSend">Kirim via WhatsApp</button>
+      <button class="btn" id="soCopy">Salin / bagikan</button>
+      <button class="btn ghost" data-close>Nanti saja</button></div>`, (sh) => {
+    const fin = () => { closeSheet(); done && done(); };
+    $('[data-close]', sh).onclick = fin;
+    $('#soSend', sh).onclick = () => { if (!cu?.phone) return toast('Nomor WA customer belum diisi'); openWA(cu.phone, $('#soMsg', sh).value); fin(); };
+    $('#soCopy', sh).onclick = () => { shareText('Update pesanan #' + o.code, $('#soMsg', sh).value); };
+  });
+}
 function buildNota(o, cu, paid = 0) {
   const t = orderTotals(o, paid);
-  const rincian = o.items.map((it, i) => {
+  const rincian = o.items.filter((it) => !it.soldOut).map((it, i) => {
     const unit = itemSellIDR(it);
     return `${i + 1}. ${it.name}${it.note ? ` (${it.note})` : ''} × ${num(it.qty)} @ ${fmtIDR(unit)} = ${fmtIDR(unit * num(it.qty))}`;
-  }).join('\n');
+  }).join('\n') + (o.items.some((it) => it.soldOut) ? '\n\n❌ Habis / tidak terbeli (tidak ditagih):\n' + o.items.filter((it) => it.soldOut).map((it) => `• ${it.name} × ${num(it.qty)}`).join('\n') : '');
   const lacak = trackLink(o);
   const map = {
     nama: cu?.name || '', kode: o.code, trip: o.trip ? ` (${o.trip})` : '', rincian,
@@ -1794,19 +1841,23 @@ async function viewOrderDetail(id) {
     <section class="card">
       <h2>Barang</h2>
       ${o.items.map((it, i) => `
-        <div class="list-item ${it.bought ? 'done' : ''}" style="border:0;padding:10px 0;margin:0;border-bottom:1px solid var(--line);border-radius:0;background:none">
+        <div class="list-item ${it.bought ? 'done' : ''} ${it.soldOut ? 'soldout' : ''}" style="border:0;padding:10px 0;margin:0;border-bottom:1px solid var(--line);border-radius:0;background:none">
           ${thumbHTML(thumbOf(it), true)}
-          <div style="flex:1;min-width:0"><div class="title">${esc(it.name)}</div>
+          <div style="flex:1;min-width:0"><div class="title">${it.soldOut ? '<span class="badge so-badge">HABIS</span> ' : ''}${esc(it.name)}</div>
             <div class="sub">${num(it.qty)} × ${fmtIDR(itemSellIDR(it))}${isShopper() || !num(it.buyPrice) ? '' : ` · beli ${fmtCur(it.buyPrice, it.buyCur)}`}${it.weight ? ` · ${num(it.weight)} g` : ''}${it.note ? ` · ${esc(it.note)}` : ''}</div></div>
-          ${['baru', 'dibeli'].includes(o.status) ? `<button class="check ${it.bought ? 'on' : ''}" data-buy="${i}" aria-label="Tandai sudah dibeli">✓</button>` : `<div class="amount">${fmtIDR(itemSellIDR(it) * num(it.qty))}</div>`}
+          ${['baru', 'dibeli'].includes(o.status) ? `<div class="item-acts"><button class="so-btn ${it.soldOut ? 'on' : ''}" data-so="${i}" aria-label="Tandai habis / tidak terbeli">${it.soldOut ? 'Habis ✕' : 'Habis?'}</button>${it.soldOut ? '' : `<button class="check ${it.bought ? 'on' : ''}" data-buy="${i}" aria-label="Tandai sudah dibeli">✓</button>`}</div>`
+            : `<div class="amount">${it.soldOut ? '<s>' + fmtIDR(itemSellIDR(it) * num(it.qty)) + '</s>' : fmtIDR(itemSellIDR(it) * num(it.qty))}</div>`}
         </div>`).join('')}
+      ${t.soldOutCount ? `<div class="alert warn" style="margin-top:12px"><b>${t.soldOutCount} barang habis / tidak terbeli</b> (${fmtIDR(t.soldOutValue)}) — tidak ditagih.
+        ${t.over > 0 ? `<br>Customer <b>kelebihan bayar ${fmtIDR(t.over)}</b> → refund atau alihkan ke produk lain.` : ''}
+        <div class="btn-col" style="margin-top:10px">${isShopper() ? '' : '<button class="btn wa" id="notifySO">📣 Kabari customer via WhatsApp</button>'}${t.over > 0 && canSell() ? `<button class="btn" id="refundSO">Catat refund ${fmtIDR(t.over)}</button>` : ''}</div></div>` : ''}
       <div class="result" style="margin-top:14px">
         <div class="line"><span>Subtotal</span><b>${fmtIDR(t.subtotal)}</b></div>
         <div class="line"><span>Ongkir</span><b>${fmtIDR(t.shipping)}</b></div>
         ${t.discount ? `<div class="line"><span>Diskon</span><b>− ${fmtIDR(t.discount)}</b></div>` : ''}
         <div class="line total"><span>Total</span><b>${fmtIDR(t.total)}</b></div>
         ${isShopper() ? '' : `<div class="line"><span>Sudah dibayar</span><b>${fmtIDR(t.paid)}</b></div>
-        <div class="line"><span>Sisa</span><b>${fmtIDR(t.due)}</b></div>
+        <div class="line"><span>${t.over > 0 ? 'Kelebihan bayar' : 'Sisa'}</span><b>${fmtIDR(t.over > 0 ? t.over : t.due)}</b></div>
         <div class="line"><span>Modal · profit</span><b>${fmtIDR(t.modal)} · ${fmtIDR(t.profit)}</b></div>`}
       </div>
     </section>
@@ -1844,10 +1895,25 @@ async function viewOrderDetail(id) {
   on('#takeO', async () => { o.pic = ME.id; o.picName = ME.name; await save('Pesanan sekarang Anda tangani'); });
   $$('[data-st]').forEach((b) => b.onclick = async () => { o.status = b.dataset.st; await save('Status: ' + statusLabel(o.status)); });
   $$('[data-buy]').forEach((b) => b.onclick = async () => {
-    const it = o.items[+b.dataset.buy]; it.bought = !it.bought;
-    if (o.items.every((x) => x.bought) && o.status === 'baru') o.status = 'dibeli';
-    if (!it.bought && o.status === 'dibeli') o.status = 'baru';
+    const it = o.items[+b.dataset.buy]; it.bought = !it.bought; if (it.bought) it.soldOut = false;
+    autoBoughtStatus(o);
     await save();
+  });
+  $$('[data-so]').forEach((b) => b.onclick = async () => {
+    const it = o.items[+b.dataset.so];
+    if (!it.soldOut && !(await confirmSheet(`Tandai "${it.name}" habis / tidak terbeli?`, 'Ya, habis', false, 'Barang ini tidak ditagih ke customer. Total pesanan dihitung ulang.'))) return;
+    it.soldOut = !it.soldOut; if (it.soldOut) it.bought = false;
+    autoBoughtStatus(o);
+    finalizeOrder(o); await saveRow('orders', o); updateBadge();
+    if (o.items.every((x) => x.soldOut)) toast('Semua barang habis — pertimbangkan batalkan pesanan & refund', 4000);
+    if (it.soldOut && cu?.phone && !isShopper()) soldOutSheet(o, cu, paid, reload); else reload();
+  });
+  on('#notifySO', () => soldOutSheet(o, cu, paid, reload));
+  on('#refundSO', async () => {
+    const over = orderTotals(o, paid).over;
+    if (!(await confirmSheet(`Catat refund ${fmtIDR(over)} ke ${cu?.name || 'customer'}?`, 'Catat refund', false, 'Dicatat sebagai pembayaran minus (metode Refund).'))) return;
+    await addPayment({ id: 'pay_' + uid(), orderId: o.id, amount: -over, method: 'Refund', note: 'Barang habis', createdAt: Date.now() });
+    toast('Refund dicatat ✓'); reload();
   });
   $$('[data-unpay]').forEach((b) => b.onclick = async () => {
     const p = pays.find((x) => x.id === b.dataset.unpay);
@@ -1907,7 +1973,7 @@ async function viewShopping() {
     if (!groups.has(key)) groups.set(key, { key, name: it.name, photo: thumbOf(it), buy: num(it.buyPrice) ? fmtCur(it.buyPrice, it.buyCur) : '', rows: [] });
     groups.get(key).rows.push({ o, it, idx });
   }));
-  const list = [...groups.values()].map((g) => ({ ...g, qty: g.rows.reduce((a, r) => a + num(r.it.qty), 0), left: g.rows.filter((r) => !r.it.bought).reduce((a, r) => a + num(r.it.qty), 0) }))
+  const list = [...groups.values()].map((g) => ({ ...g, qty: g.rows.reduce((a, r) => a + num(r.it.qty), 0), left: g.rows.filter((r) => !r.it.bought && !r.it.soldOut).reduce((a, r) => a + num(r.it.qty), 0), so: g.rows.filter((r) => r.it.soldOut).reduce((a, r) => a + num(r.it.qty), 0) }))
     .filter((g) => showDone || g.left > 0)
     .sort((a, b) => (a.left === 0) - (b.left === 0) || a.name.localeCompare(b.name));
   const totalLeft = list.reduce((a, g) => a + g.left, 0);
@@ -1925,14 +1991,17 @@ async function viewShopping() {
         <button class="group-head" data-group="${esc(g.key)}">
           ${thumbHTML(g.photo)}
           <div style="flex:1;min-width:0"><div class="title">${esc(g.name)}</div>
-            <div class="sub">${g.left === 0 ? 'Semua sudah dibeli' : `Beli <b>${g.left}</b> dari ${g.qty}`}${g.buy ? ' · ' + esc(g.buy) : ''} · ${g.rows.length} pesanan</div></div>
+            <div class="sub">${g.left === 0 ? (g.so === g.qty ? '<b style="color:var(--warn)">Habis semua</b>' : 'Semua sudah dibeli') : `Beli <b>${g.left}</b> dari ${g.qty}`}${g.so && g.so < g.qty ? ` · <b style="color:var(--warn)">${g.so} habis</b>` : ''}${g.buy ? ' · ' + esc(g.buy) : ''} · ${g.rows.length} pesanan</div></div>
           <span class="check ${g.left === 0 ? 'on' : ''}">✓</span>
         </button>
         <div class="group-rows">${g.rows.map((r) => `
-          <button class="group-row ${r.it.bought ? 'done' : ''}" data-o="${r.o.id}" data-i="${r.idx}">
-            <span class="check ${r.it.bought ? 'on' : ''}">✓</span>
-            <span class="name" style="flex:1">${esc(cmap[r.o.customerId]?.name || '?')} · #${esc(r.o.code)}${r.it.note ? ` · <i>${esc(r.it.note)}</i>` : ''}</span>
-            <b>× ${num(r.it.qty)}</b></button>`).join('')}</div>
+          <div class="group-row ${r.it.bought ? 'done' : ''} ${r.it.soldOut ? 'soldout' : ''}">
+            <button class="gr-main" data-o="${r.o.id}" data-i="${r.idx}" ${r.it.soldOut ? 'disabled' : ''}>
+              <span class="check ${r.it.bought ? 'on' : ''}">✓</span>
+              <span class="name" style="flex:1">${r.it.soldOut ? '<span class="badge so-badge">HABIS</span> ' : ''}${esc(cmap[r.o.customerId]?.name || '?')} · #${esc(r.o.code)}${r.it.note ? ` · <i>${esc(r.it.note)}</i>` : ''}</span>
+              <b>× ${num(r.it.qty)}</b></button>
+            ${r.it.bought ? '' : `<button class="so-btn ${r.it.soldOut ? 'on' : ''}" data-so-o="${r.o.id}" data-so-i="${r.idx}">${r.it.soldOut ? 'Habis ✕' : 'Habis?'}</button>`}
+          </div>`).join('')}</div>
       </div>`).join('') : `<div class="empty"><div class="big">🎉</div>Tidak ada barang yang perlu dibeli.</div>`}
     ${list.length ? '<button class="btn" id="shareList" style="margin-top:6px">Bagikan daftar belanja</button>' : ''}`;
   await hydratePhotos();
@@ -1942,18 +2011,24 @@ async function viewShopping() {
     pairs.forEach(({ oid, idx }) => { if (!byOrder.has(oid)) byOrder.set(oid, []); byOrder.get(oid).push(idx); });
     for (const [oid, idxs] of byOrder) {
       const o = await DB.get('orders', oid); if (!o) continue;
-      idxs.forEach((i) => { if (o.items[i]) o.items[i].bought = val; });
-      if (o.items.every((x) => x.bought) && o.status === 'baru') o.status = 'dibeli';
-      if (!o.items.every((x) => x.bought) && o.status === 'dibeli') o.status = 'baru';
+      idxs.forEach((i) => { const it = o.items[i]; if (it && !it.soldOut) it.bought = val; });
+      autoBoughtStatus(o);
       await saveRow('orders', o);
     }
     viewShopping();
   };
   $$('[data-evs]').forEach((b) => b.onclick = () => { viewShopping.ev = b.dataset.evs; viewShopping(); });
   $('#toggleDone').onclick = () => { viewShopping.showDone = !showDone; viewShopping(); };
-  $$('.group-row').forEach((b) => b.onclick = () => {
+  $$('.gr-main').forEach((b) => b.onclick = () => {
     const o = active.find((x) => x.id === b.dataset.o); const it = o.items[+b.dataset.i];
     setBought([{ oid: o.id, idx: +b.dataset.i }], !it.bought);
+  });
+  $$('[data-so-o]').forEach((b) => b.onclick = async () => {
+    const o = await DB.get('orders', b.dataset.soO); if (!o) return; const it = o.items[+b.dataset.soI];
+    if (!it.soldOut && !(await confirmSheet(`"${it.name}" untuk ${cmap[o.customerId]?.name || 'customer'} habis?`, 'Ya, habis', false, 'Tidak ditagih ke customer. Admin bisa mengabari customer dari detail pesanan.'))) return;
+    it.soldOut = !it.soldOut; if (it.soldOut) it.bought = false;
+    autoBoughtStatus(o); if (!isShopper()) finalizeOrder(o);
+    await saveRow('orders', o); toast(it.soldOut ? 'Ditandai habis — kabari customer dari detail pesanan' : 'Tanda habis dibatalkan'); viewShopping();
   });
   $$('[data-group]').forEach((b) => b.onclick = () => {
     const g = list.find((x) => x.key === b.dataset.group);
@@ -2644,7 +2719,7 @@ async function buildInvoicePDF(o, cu, pays) {
     const tx = withPh ? TH + 5 : 0;
     const cat = pdfTxt([prodMap[it.productId]?.category, it.note].filter(Boolean).join(' · '));
     doc.setFont('helvetica', 'bold'); doc.setFontSize(9.8);
-    const name = doc.splitTextToSize(pdfTxt(it.name) || '-', cols[1].w - 4 - tx).slice(0, 3);
+    const name = doc.splitTextToSize(pdfTxt(it.name + (it.soldOut ? ' (HABIS)' : '')) || '-', cols[1].w - 4 - tx).slice(0, 3);
     const textH = name.length * 4.3 + (cat ? 4.4 : 0);
     const h = Math.max(withPh ? TH + 5 : 11, textH + 6);
     if (y + h > 262) { doc.addPage(); y = M; }
@@ -2664,7 +2739,7 @@ async function buildInvoicePDF(o, cu, pays) {
     if (cat) { doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...GREY); doc.text(cat, nx, ny + name.length * 4.3 + 0.2); }
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(...INK);
     put(String(q), 2, mid + 1.2); put('Rp ' + nfmt(unit), 3, mid + 1.2);
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(10); put('Rp ' + nfmt(unit * q), 4, mid + 1.2);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(10); put(it.soldOut ? 'HABIS' : 'Rp ' + nfmt(unit * q), 4, mid + 1.2);
     y += h;
     doc.setDrawColor(...SEP); doc.setLineWidth(0.3); doc.line(M + 1, y, M + CW - 1, y);
   });
@@ -2846,7 +2921,7 @@ async function buildLabelPDF(o, cu) {
   xs.slice(1).forEach((x) => doc.line(x, y, x, y + 7));
   doc.setFont('helvetica', 'bold'); doc.setFontSize(9); cols.forEach((c, i) => doc.text(c.h, cx(i), y + 4.8, { align: c.a === 'left' ? 'left' : 'center' }));
   y += 7;
-  const items = (o.items || []).filter((it) => it.name || num(it.qty));
+  const items = (o.items || []).filter((it) => (it.name || num(it.qty)) && !it.soldOut);
   const maxY = 141; let shown = 0;
   doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
   for (const [i, it] of items.entries()) {

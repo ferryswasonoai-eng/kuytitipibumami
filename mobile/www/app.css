@@ -427,3 +427,13 @@ input[type=date].input { -webkit-appearance: none; appearance: none; width: 100%
 .photo { position: relative; }
 .ph-main { position: absolute; left: 4px; bottom: 4px; background: var(--accent, #ef3b2d); color: #fff; font-size: .62rem; font-weight: 700; padding: 2px 6px; border-radius: 6px; }
 .ph-star { position: absolute; left: 4px; bottom: 4px; width: 26px; height: 26px; border-radius: 50%; border: 0; background: rgba(255,255,255,.92); color: #d97706; font-size: .85rem; box-shadow: 0 2px 6px rgba(0,0,0,.25); }
+/* barang habis / tidak terbeli */
+.item-acts { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.so-btn { border: 1.5px solid var(--line-2); background: #fff; color: var(--muted); border-radius: 9px; font: 700 .72rem var(--sans, inherit); padding: 5px 8px; white-space: nowrap; cursor: pointer; }
+.so-btn.on { border-color: #b45309; background: #fef3c7; color: #92400e; }
+.so-badge { background: #fef3c7; color: #92400e; font-size: .64rem; padding: 2px 6px; border-radius: 6px; vertical-align: middle; }
+.soldout .title, .soldout .sub, .group-row.soldout span.name { color: var(--muted); }
+.soldout .title { text-decoration: line-through; text-decoration-color: rgba(0,0,0,.35); }
+.group-row { padding: 0 10px 0 0; gap: 6px; }
+.group-row .gr-main { display: flex; gap: 12px; align-items: center; flex: 1; min-width: 0; padding: 10px 4px 10px 14px; border: 0; background: none; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+.group-row .gr-main[disabled] { cursor: default; }

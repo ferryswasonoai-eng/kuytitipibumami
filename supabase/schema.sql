@@ -526,7 +526,8 @@ language sql stable security definer set search_path = public as $$
         'price', coalesce(it->'sellIDR', it->'sellPrice'),
         'photos', coalesce(it->'photos', '[]'::jsonb),
         'productPhoto', it->>'productPhoto',
-        'bought', coalesce((it->>'bought')::boolean, false))), '[]'::jsonb)
+        'bought', coalesce((it->>'bought')::boolean, false),
+        'soldOut', coalesce((it->>'soldOut')::boolean, false))), '[]'::jsonb)
       from jsonb_array_elements(o.items) it),
     'receipts', o.receipts,
     'subtotal', o.subtotal, 'shipping', o.shipping, 'discount', o.discount, 'total', o.total,

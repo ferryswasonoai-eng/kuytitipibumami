@@ -65,15 +65,15 @@
         <section class="panel"><h2>Barang</h2>
           ${(o.items || []).map((it) => { const ph = (it.photos && it.photos[0]) || it.productPhoto;
             return `<div class="line-item">${ph ? `<img src="${esc(photoUrl(ph))}" alt="" data-zoom="${esc(photoUrl(ph))}" style="cursor:zoom-in">` : '<div class="noimg">📦</div>'}
-              <div style="flex:1;min-width:0"><div class="nm">${esc(it.name)}</div><div class="sub">${it.qty} × ${fmtIDR(it.price)}${it.bought ? ' · <span class="badge b-ok">sudah dibeli</span>' : ''}</div></div>
-              <b>${fmtIDR(Number(it.price) * Number(it.qty))}</b></div>`; }).join('')}
+              <div style="flex:1;min-width:0"><div class="nm" ${it.soldOut ? 'style="text-decoration:line-through;color:var(--muted)"' : ''}>${esc(it.name)}</div><div class="sub">${it.qty} × ${fmtIDR(it.price)}${it.soldOut ? ' · <span class="badge b-bad">habis — tidak ditagih</span>' : it.bought ? ' · <span class="badge b-ok">sudah dibeli</span>' : ''}</div></div>
+              <b>${it.soldOut ? `<s style="color:var(--muted)">${fmtIDR(Number(it.price) * Number(it.qty))}</s>` : fmtIDR(Number(it.price) * Number(it.qty))}</b></div>`; }).join('')}
           <div style="margin-top:10px">
             <div class="row"><span>Subtotal</span><b>${fmtIDR(o.subtotal)}</b></div>
             <div class="row"><span>Ongkir</span><b>${Number(o.shipping) ? fmtIDR(o.shipping) : (o.status === 'menunggu' ? 'dikonfirmasi admin' : fmtIDR(0))}</b></div>
             ${Number(o.discount) ? `<div class="row"><span>Diskon</span><b>− ${fmtIDR(o.discount)}</b></div>` : ''}
             <div class="row total"><span>Total</span><b>${fmtIDR(o.total)}</b></div>
             <div class="row"><span>Sudah dibayar</span><b>${fmtIDR(o.paid)}</b></div>
-            <div class="row"><span>Sisa tagihan</span><b>${due > 0 ? fmtIDR(due) : '<span class="badge b-ok">Lunas</span>'}</b></div>
+            ${Number(o.paid) > Number(o.total) ? `<div class="row"><span>Kelebihan bayar (refund)</span><b>${fmtIDR(Number(o.paid) - Number(o.total))}</b></div>` : `<div class="row"><span>Sisa tagihan</span><b>${due > 0 ? fmtIDR(due) : '<span class="badge b-ok">Lunas</span>'}</b></div>`}
           </div>
         </section>
         ${photos.length ? `<section class="panel"><h2>Foto belanja</h2><p class="note" style="margin:-6px 0 12px">Bukti barang & struk dari toko.</p>
