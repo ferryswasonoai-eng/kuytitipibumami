@@ -1843,9 +1843,9 @@ async function viewOrderDetail(id) {
       ${o.items.map((it, i) => `
         <div class="list-item ${it.bought ? 'done' : ''} ${it.soldOut ? 'soldout' : ''}" style="border:0;padding:10px 0;margin:0;border-bottom:1px solid var(--line);border-radius:0;background:none">
           ${thumbHTML(thumbOf(it), true)}
-          <div style="flex:1;min-width:0"><div class="title">${it.soldOut ? '<span class="badge so-badge">HABIS</span> ' : ''}${esc(it.name)}</div>
+          <div style="flex:1;min-width:0"><div class="title">${it.soldOut ? '<span class="badge so-badge">HABIS</span> ' : it.bought ? '<span class="badge ok-badge">✓ Sudah dibeli</span> ' : ''}${esc(it.name)}</div>
             <div class="sub">${num(it.qty)} × ${fmtIDR(itemSellIDR(it))}${isShopper() || !num(it.buyPrice) ? '' : ` · beli ${fmtCur(it.buyPrice, it.buyCur)}`}${it.weight ? ` · ${num(it.weight)} g` : ''}${it.note ? ` · ${esc(it.note)}` : ''}</div></div>
-          ${['baru', 'dibeli'].includes(o.status) ? `<div class="item-acts"><button class="so-btn ${it.soldOut ? 'on' : ''}" data-so="${i}" aria-label="Tandai habis / tidak terbeli">${it.soldOut ? 'Habis ✕' : 'Habis?'}</button>${it.soldOut ? '' : `<button class="check ${it.bought ? 'on' : ''}" data-buy="${i}" aria-label="Tandai sudah dibeli">✓</button>`}</div>`
+          ${['baru', 'dibeli'].includes(o.status) ? `<div class="item-acts">${it.bought ? '' : `<button class="so-btn ${it.soldOut ? 'on' : ''}" data-so="${i}" aria-label="Tandai habis / tidak terbeli">${it.soldOut ? 'Habis ✕' : 'Habis?'}</button>`}${it.soldOut ? '' : `<button class="check ${it.bought ? 'on' : ''}" data-buy="${i}" aria-label="Tandai sudah dibeli">✓</button>`}</div>`
             : `<div class="amount">${it.soldOut ? '<s>' + fmtIDR(itemSellIDR(it) * num(it.qty)) + '</s>' : fmtIDR(itemSellIDR(it) * num(it.qty))}</div>`}
         </div>`).join('')}
       ${t.soldOutCount ? `<div class="alert warn" style="margin-top:12px"><b>${t.soldOutCount} barang habis / tidak terbeli</b> (${fmtIDR(t.soldOutValue)}) — tidak ditagih.
@@ -1998,7 +1998,7 @@ async function viewShopping() {
           <div class="group-row ${r.it.bought ? 'done' : ''} ${r.it.soldOut ? 'soldout' : ''}">
             <button class="gr-main" data-o="${r.o.id}" data-i="${r.idx}" ${r.it.soldOut ? 'disabled' : ''}>
               <span class="check ${r.it.bought ? 'on' : ''}">✓</span>
-              <span class="name" style="flex:1">${r.it.soldOut ? '<span class="badge so-badge">HABIS</span> ' : ''}${esc(cmap[r.o.customerId]?.name || '?')} · #${esc(r.o.code)}${r.it.note ? ` · <i>${esc(r.it.note)}</i>` : ''}</span>
+              <span class="name" style="flex:1">${r.it.soldOut ? '<span class="badge so-badge">HABIS</span> ' : r.it.bought ? '<span class="badge ok-badge">✓ Dibeli</span> ' : ''}${esc(cmap[r.o.customerId]?.name || '?')} · #${esc(r.o.code)}${r.it.note ? ` · <i>${esc(r.it.note)}</i>` : ''}</span>
               <b>× ${num(r.it.qty)}</b></button>
             ${r.it.bought ? '' : `<button class="so-btn ${r.it.soldOut ? 'on' : ''}" data-so-o="${r.o.id}" data-so-i="${r.idx}">${r.it.soldOut ? 'Habis ✕' : 'Habis?'}</button>`}
           </div>`).join('')}</div>

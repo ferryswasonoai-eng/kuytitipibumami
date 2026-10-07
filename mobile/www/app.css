@@ -437,3 +437,8 @@ input[type=date].input { -webkit-appearance: none; appearance: none; width: 100%
 .group-row { padding: 0 10px 0 0; gap: 6px; }
 .group-row .gr-main { display: flex; gap: 12px; align-items: center; flex: 1; min-width: 0; padding: 10px 4px 10px 14px; border: 0; background: none; text-align: left; font: inherit; color: inherit; cursor: pointer; }
 .group-row .gr-main[disabled] { cursor: default; }
+/* sudah dibeli: tidak dicoret (coretan khusus barang HABIS) */
+.done .title, .group-row.done span.name { text-decoration: none; color: var(--ink); }
+.list-item.done .title, .group-row.done span.name { color: var(--ink-2, #5d6474); }
+.ok-badge { background: #e3f5ec; color: #17915f; font-size: .64rem; padding: 2px 6px; border-radius: 6px; vertical-align: middle; }
+.soldout .title, .group-row.soldout span.name { text-decoration: line-through; text-decoration-color: rgba(0,0,0,.35); color: var(--muted); }
