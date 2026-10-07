@@ -1825,6 +1825,7 @@ async function viewOrderDetail(id) {
 
     <div class="btn-col">
       ${isShopper() ? '' : '<button class="btn wa" id="sendWA">Kirim nota ke WhatsApp</button><button class="btn wa-outline" id="sendInv">📄 Kirim invoice PDF via WhatsApp</button><button class="btn" id="shareNota">Bagikan / salin nota</button>'}
+      <button class="btn" id="printLabel">🏷️ Cetak label pengiriman (100×150 mm)</button>
       ${link ? '<button class="btn" id="copyTrack">Bagikan link lacak pesanan</button>' : ''}
       ${canSell() ? `<a class="btn" href="#/pesanan/${o.id}/edit">Ubah pesanan</a>` : ''}
       ${isOwner() ? '<button class="btn danger" id="delOrder">Hapus pesanan</button>' : ''}
@@ -1864,6 +1865,7 @@ async function viewOrderDetail(id) {
   on('#sendWA', () => cu?.phone ? openWA(cu.phone, buildNota(o, cu, paid)) : toast('Nomor WA customer belum diisi'));
   on('#shareNota', () => shareText('Nota #' + o.code, buildNota(o, cu, paid)));
   on('#sendInv', () => sendInvoice(o, cu, pays));
+  on('#printLabel', () => printLabel(o, cu));
   on('#copyTrack', () => shareText('Lacak pesanan #' + o.code, link));
   on('#delOrder', async () => {
     if (!(await confirmSheet(`Hapus pesanan #${o.code}?`, 'Hapus'))) return;
@@ -2432,6 +2434,7 @@ async function viewSettings() {
       <h2>Profil usaha</h2>
       <div class="field"><label>Nama usaha</label><input class="input" id="sBiz" value="${esc(S.business)}"></div>
       <div class="field"><label>No. WhatsApp usaha (penerima order web)</label><input class="input" id="sWa" inputmode="tel" value="${esc(S.ownerWa ? fmtPhone(S.ownerWa) : '')}"></div>
+      <div class="field"><label>Kota pengirim (untuk label pengiriman)</label><input class="input" id="sCity" value="${esc(S.senderCity || '')}" placeholder="mis. KAB. TANGERANG" autocapitalize="characters"></div>
       <div class="field"><label>Link web buyer</label><input class="input" id="sWeb" value="${esc(S.webUrl)}"></div>
     </section>
 
@@ -2523,7 +2526,7 @@ async function viewSettings() {
   on('#sSave', async () => {
     Object.assign(S, {
       business: $('#sBiz').value.trim() || 'KuyTitip', ownerWa: normPhone($('#sWa').value),
-      webUrl: $('#sWeb').value.trim(), invoiceNote: $('#sInv').value.trim(), banks: readBanks(), template: $('#sTpl').value || DEFAULT_TEMPLATE,
+      webUrl: $('#sWeb').value.trim(), senderCity: $('#sCity').value.trim(), invoiceNote: $('#sInv').value.trim(), banks: readBanks(), template: $('#sTpl').value || DEFAULT_TEMPLATE,
       categories: $('#sCats').value.split('\n').map((l) => l.trim()).filter(Boolean).map((l) => {
         const m = l.match(/^(\p{Extended_Pictographic}[\u{FE0F}\u{200D}\p{Extended_Pictographic}]*)\s*(.+)$/u);
         return m ? { icon: m[1], name: m[2].trim() } : { icon: '🛍️', name: l };
@@ -2741,6 +2744,147 @@ async function buildInvoicePDF(o, cu, pays) {
 }
 const waSharePlugin = () => { try { return plugin('WaShare') || (window.Capacitor && window.Capacitor.registerPlugin ? window.Capacitor.registerPlugin('WaShare') : null); } catch (e) { return null; } };
 const waPkg = () => { try { return localStorage.getItem('kt-wa-pkg') || ''; } catch (e) { return ''; } };
+/* ================= Label pengiriman thermal 100×150 mm (hitam-putih) ================= */
+const LABEL_ICONS = {
+  clip: { d: 'M9 3.5h6v3H9z M6 5.5h12v16H6z M9 11h6 M9 14.5h6 M9 18h4', stroke: true },
+  user: { d: 'M12 3.5a4.2 4.2 0 1 1 0 8.4a4.2 4.2 0 1 1 0-8.4z M3.5 21.5c0-4.6 3.8-7.6 8.5-7.6s8.5 3 8.5 7.6z' },
+  store: { d: 'M3 9.5l2-5.5h14l2 5.5z M4.5 10.5h15V21h-15z', cut: 'M10 21v-5.5h4V21z' },
+  phone: { d: 'M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1l-2.3 2.2z' },
+  arrow: { d: 'M3 12h17 M13.5 5.5L20 12l-6.5 6.5', stroke: true },
+};
+function iconPng(name, px = 96, color = '#000') {
+  const ic = LABEL_ICONS[name];
+  const c = document.createElement('canvas'); c.width = c.height = px;
+  const g = c.getContext('2d'); g.scale(px / 24, px / 24);
+  g.fillStyle = color; g.strokeStyle = color; g.lineWidth = 2; g.lineJoin = g.lineCap = 'round';
+  const path = new Path2D(ic.d);
+  if (ic.stroke) g.stroke(path); else g.fill(path);
+  if (ic.cut) { g.globalCompositeOperation = 'destination-out'; g.fill(new Path2D(ic.cut)); }
+  return c.toDataURL('image/png');
+}
+async function grayLogo(px = 240) {
+  try {
+    const bmp = await createImageBitmap(await (await fetch('logo.png')).blob());
+    const c = document.createElement('canvas'); c.width = c.height = px;
+    const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, px, px); g.drawImage(bmp, 0, 0, px, px);
+    const d = g.getImageData(0, 0, px, px); const a = d.data;
+    for (let i = 0; i < a.length; i += 4) {   // abu-abu kontras tinggi supaya jelas di printer thermal
+      let y = 0.3 * a[i] + 0.59 * a[i + 1] + 0.11 * a[i + 2];
+      y = Math.max(0, Math.min(255, (y - 128) * 1.6 + 128));
+      a[i] = a[i + 1] = a[i + 2] = y;
+    }
+    g.putImageData(d, 0, 0); return c.toDataURL('image/png');
+  } catch (e) { return ''; }
+}
+async function buildLabelPDF(o, cu) {
+  const { jsPDF } = await loadJsPDF();
+  const doc = new jsPDF({ unit: 'mm', format: [100, 150] });
+  const L = 6, R = 94, W = R - L;
+  const fitText = (txt, maxW, size, min = 7) => { let s2 = size; doc.setFontSize(s2); while (s2 > min && doc.getTextWidth(txt) > maxW) { s2 -= 0.5; doc.setFontSize(s2); } return s2; };
+  const pill = (x, y, label, icon) => {
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5);
+    const w = doc.getTextWidth(label) + 13;
+    doc.setFillColor(0, 0, 0); doc.roundedRect(x, y, w, 7, 1.6, 1.6, 'F');
+    doc.addImage(iconPng(icon, 96, '#fff'), 'PNG', x + 1.8, y + 1.1, 4.8, 4.8);
+    doc.setTextColor(255, 255, 255); doc.text(label, x + 9, y + 4.9);
+    doc.setTextColor(0, 0, 0);
+  };
+  doc.setDrawColor(0, 0, 0); doc.setTextColor(0, 0, 0);
+  doc.setLineWidth(0.6); doc.roundedRect(2.5, 2.5, 95, 145, 3, 3);
+  // header: logo + nama usaha + tagline
+  let y = 5.5;
+  const logo = await grayLogo();
+  if (logo) doc.addImage(logo, 'PNG', L, y, 16, 16);
+  doc.setFont('helvetica', 'bold'); fitText(pdfTxt(S.business || 'KuyTitipIbuMami'), W - 20, 17, 11);
+  doc.text(pdfTxt(S.business || 'KuyTitipIbuMami'), L + 19, y + 8.2);
+  doc.setFont('helvetica', 'italic'); doc.setFontSize(9.5); doc.text('Happy Shopping & Salam Tajir', L + 19, y + 13.6);
+  y = 24; doc.setLineWidth(0.4); doc.line(2.5, y, 97.5, y);
+  // nomor pesanan
+  y += 3; doc.setLineWidth(0.5); doc.roundedRect(L, y, W, 19, 2, 2);
+  doc.addImage(iconPng('clip'), 'PNG', L + 3, y + 3.5, 12, 12);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.text('No. Pesanan', L + 18.5, y + 6.2);
+  doc.setFont('helvetica', 'bold'); fitText(o.code, W - 22, 24, 12); doc.text(o.code, L + 18.5, y + 15.4);
+  y += 22; doc.setLineWidth(0.4); doc.line(2.5, y, 97.5, y);
+  // penerima & pengirim
+  y += 3; const colW = W / 2 - 3, xR = L + W / 2 + 3;
+  pill(L, y, 'Penerima', 'user'); pill(xR, y, 'Pengirim', 'store');
+  const topCols = y + 11;
+  // kiri
+  let yl = topCols;
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(11.5);
+  const nm = doc.splitTextToSize(pdfTxt(cu?.name || '-'), colW).slice(0, 2); doc.text(nm, L, yl); yl += nm.length * 4.8 + 1;
+  doc.addImage(iconPng('phone'), 'PNG', L, yl - 3.3, 4, 4);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.text(cu?.phone ? fmtPhone(cu.phone).replace(/^\+62/, '+62 ').replace(/(\d{3})(\d{4})(\d+)$/, '$1 $2 $3') : '-', L + 5.5, yl); yl += 5.5;
+  const addr = pdfTxt(cu?.address && cu?.city && cu.address.toLowerCase().includes(cu.city.toLowerCase()) ? cu.address : [cu?.address, cu?.city].filter(Boolean).join(', '));
+  let asz = 9; doc.setFontSize(asz); let al = doc.splitTextToSize(addr || 'Alamat belum diisi', colW);
+  while (al.length > 8 && asz > 7) { asz -= 0.5; doc.setFontSize(asz); al = doc.splitTextToSize(addr, colW); }
+  al = al.slice(0, 9); doc.text(al, L, yl); yl += al.length * asz * 0.42;
+  // kanan
+  let yr = topCols;
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(11.5);
+  const sn = doc.splitTextToSize(pdfTxt(S.business || '-'), colW).slice(0, 2); doc.text(sn, xR, yr); yr += sn.length * 4.8 + 1;
+  if (S.ownerWa) { doc.addImage(iconPng('phone'), 'PNG', xR, yr - 3.3, 4, 4); doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.text(fmtPhone(S.ownerWa).replace(/^\+62/, '+62 ').replace(/(\d{3})(\d{4})(\d+)$/, '$1 $2 $3'), xR + 5.5, yr); yr += 5.5; }
+  if (S.senderCity) { doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.text(doc.splitTextToSize(pdfTxt(S.senderCity.toUpperCase()), colW).slice(0, 2), xR, yr); yr += 5; }
+  const colEnd = Math.max(yl, yr, topCols + 30) + 1;
+  doc.setLineDashPattern([1, 1], 0); doc.setLineWidth(0.3); doc.line(L + W / 2, y + 1, L + W / 2, colEnd); doc.setLineDashPattern([], 0);
+  y = colEnd + 2; doc.setLineWidth(0.4); doc.line(L, y, R, y);
+  // kota pengirim → kota tujuan
+  y += 3; const bw = 38;
+  doc.setLineWidth(0.5); doc.roundedRect(L, y, bw, 13, 2, 2); doc.roundedRect(R - bw, y, bw, 13, 2, 2);
+  doc.addImage(iconPng('arrow'), 'PNG', L + bw + 2.5, y + 2.5, W - 2 * bw - 5, 8);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.text('Kota Pengirim', L + 2.5, y + 4.6); doc.text('Kota Tujuan', R - bw + 2.5, y + 4.6);
+  doc.setFont('helvetica', 'bold');
+  const kp = pdfTxt((S.senderCity || '-').toUpperCase()); fitText(kp, bw - 5, 11, 7); doc.text(kp, L + 2.5, y + 10.4);
+  const kt = pdfTxt((cu?.city || '-').toUpperCase()); fitText(kt, bw - 5, 11, 7); doc.text(kt, R - bw + 2.5, y + 10.4);
+  y += 16; doc.setLineWidth(0.4); doc.line(L, y, R, y);
+  // tabel barang
+  y += 3;
+  const cols = [{ h: '#', w: 7, a: 'center' }, { h: 'Nama Produk', w: 50, a: 'left' }, { h: 'Variasi', w: 20, a: 'center' }, { h: 'Qty', w: W - 77, a: 'center' }];
+  const xs = []; cols.reduce((x, c) => { xs.push(x); return x + c.w; }, L);
+  const cx = (i) => cols[i].a === 'left' ? xs[i] + 2 : xs[i] + cols[i].w / 2;
+  doc.setLineWidth(0.4); doc.setFillColor(235, 235, 235); doc.rect(L, y, W, 7, 'FD');
+  xs.slice(1).forEach((x) => doc.line(x, y, x, y + 7));
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(9); cols.forEach((c, i) => doc.text(c.h, cx(i), y + 4.8, { align: c.a === 'left' ? 'left' : 'center' }));
+  y += 7;
+  const items = (o.items || []).filter((it) => it.name || num(it.qty));
+  const maxY = 141; let shown = 0;
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
+  for (const [i, it] of items.entries()) {
+    const nm2 = doc.splitTextToSize(pdfTxt(it.name) || '-', cols[1].w - 4).slice(0, 2);
+    const vr = doc.splitTextToSize(pdfTxt(it.note) || '-', cols[2].w - 3).slice(0, 2);
+    const h = Math.max(nm2.length, vr.length) * 3.9 + 3.2;
+    if (y + h > maxY - (i < items.length - 1 ? 5 : 0)) break;
+    doc.rect(L, y, W, h); xs.slice(1).forEach((x) => doc.line(x, y, x, y + h));
+    doc.text(String(i + 1), cx(0), y + 4.6, { align: 'center' }); doc.text(nm2, cx(1), y + 4.6);
+    doc.text(vr, cx(2), y + 4.6, { align: 'center' }); doc.setFont('helvetica', 'bold'); doc.text(String(num(it.qty)), cx(3), y + 4.6, { align: 'center' }); doc.setFont('helvetica', 'normal');
+    y += h; shown++;
+  }
+  if (shown < items.length) { doc.setFont('helvetica', 'italic'); doc.setFontSize(8.5); doc.text(`+ ${items.length - shown} barang lainnya (lihat nota)`, L, y + 4); y += 5; }
+  const totQty = items.reduce((a, it) => a + num(it.qty), 0);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5);
+  doc.text(`Total ${totQty} pcs${evById(o.eventId) ? ' · Jastip ' + pdfTxt(evById(o.eventId).name) : ''}`, L, 145.2);
+  doc.text(new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }), R, 145.2, { align: 'right' });
+  const safe = (x) => String(x || '').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-');
+  return { doc, name: `Label-${o.code}${cu?.name ? '-' + safe(cu.name) : ''}.pdf` };
+}
+async function printLabel(o, cu) {
+  if (!cu || !(cu.address || cu.city)) toast('Alamat customer belum lengkap — label tetap dibuat', 3000);
+  let r;
+  try { r = await buildLabelPDF(o, cu); } catch (e) { console.error(e); return toast('Gagal membuat label: ' + (e.message || e), 4000); }
+  const Fs = plugin('Filesystem'); const Share = plugin('Share');
+  if (isNative() && Fs && Share) {
+    try {
+      const w = await Fs.writeFile({ path: r.name, data: r.doc.output('datauristring').split(',')[1], directory: 'CACHE' });
+      toast('Pilih aplikasi printer thermal Anda');
+      await Share.share({ title: 'Label ' + o.code, files: [w.uri], dialogTitle: 'Cetak label pengiriman' });
+    } catch (e) { if (!/cancel/i.test(String(e && e.message))) toast('Gagal membagikan: ' + (e.message || e), 4000); }
+    return;
+  }
+  const blob = r.doc.output('blob'); const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = r.name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+
 async function sendInvoice(o, cu, pays) {
   toast('Membuat invoice PDF…');
   let r;
