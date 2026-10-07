@@ -173,6 +173,7 @@ Berikut rincian titipan *#{kode}*{trip}:
 {rincian}
 
 Subtotal barang: {subtotal}
+Potongan diskon: {potongan}
 Ongkir: {ongkir}
 *Total: {total}*
 Sudah dibayar: {dibayar}
@@ -290,20 +291,27 @@ const itemRate = (it) => num(it.rate) || rateOf(it.buyCur);
 const itemSellIDR = (it) => it.sellCur === 'IDR' || !it.sellCur ? num(it.sellPrice)
   : (num(it.sellIDR) || num(it.sellPrice) * rateOf(it.sellCur));
 const liveSellIDR = (it) => it.sellCur === 'IDR' || !it.sellCur ? num(it.sellPrice) : num(it.sellPrice) * rateOf(it.sellCur);
+// potongan diskon per item (Rp, untuk baris itu) — tidak boleh melebihi harga barisnya
+const lineGross = (it) => itemSellIDR(it) * (num(it.qty) || 0);
+const lineDisc = (it) => Math.min(Math.max(0, num(it.disc)), lineGross(it));
+const lineNet = (it) => lineGross(it) - lineDisc(it);
+const pendingItems = (o) => (o.items || []).filter((x) => !x.bought && !x.soldOut);
 function orderTotals(o, paid = 0) {
-  let subtotal = 0, modal = 0, qty = 0, soldOutValue = 0, soldOutCount = 0;
+  let subtotal = 0, modal = 0, qty = 0, soldOutValue = 0, soldOutCount = 0, itemDisc = 0;
   (o.items || []).forEach((it) => {
     const q = num(it.qty) || 0;
-    if (it.soldOut) { soldOutValue += itemSellIDR(it) * q; soldOutCount += 1; return; }  // barang habis tidak ditagih
+    if (it.soldOut) { soldOutValue += lineNet(it); soldOutCount += 1; return; }  // barang habis tidak ditagih
     qty += q;
     subtotal += itemSellIDR(it) * q;
+    itemDisc += lineDisc(it);
     modal += num(it.buyPrice) * itemRate(it) * q;
   });
   const shipping = num(o.shipping);
-  const discount = num(o.discount);
-  const total = Math.max(0, subtotal + shipping - discount);
+  const discount = num(o.discount);           // diskon tambahan untuk seluruh pesanan
+  const totalDisc = itemDisc + discount;      // total potongan diskon
+  const total = Math.max(0, subtotal - itemDisc + shipping - discount);
   paid = num(paid);
-  return { qty, subtotal, shipping, discount, total, paid, due: Math.max(0, total - paid), over: Math.max(0, paid - total), modal, profit: subtotal - discount - modal, soldOutValue, soldOutCount };
+  return { qty, subtotal, itemDisc, shipping, discount, totalDisc, total, paid, due: Math.max(0, total - paid), over: Math.max(0, paid - total), modal, profit: subtotal - totalDisc - modal, soldOutValue, soldOutCount };
 }
 // status otomatis: semua barang sudah dibeli / habis → "Sudah dibeli"
 function autoBoughtStatus(o) {
@@ -1434,6 +1442,8 @@ async function viewOrderForm(id) {
           <select class="input" data-k="sellCur">${curOptions(it.sellCur || 'IDR')}</select></div>
         <div class="help" data-help="sell">Isi dalam ${esc(it.sellCur || 'IDR')} (harga ke customer)</div>
       </div>
+      <div class="field"><label>Potongan diskon item ini (Rp)</label><input class="input" data-k="disc" data-money inputmode="decimal" value="${esc(it.disc || '')}" placeholder="0">
+        <div class="help">Total potongan untuk baris ini (bukan per pcs). Kosongkan bila tidak ada.</div></div>
       <div class="field"><label>Catatan barang</label><input class="input" data-k="note" value="${esc(it.note || '')}" placeholder="Varian, warna, ukuran…"></div>
       <button type="button" class="btn" data-act="quick">Hitung harga jual (cepat)</button>
       <details class="calc"><summary>Hitung harga jual</summary><div class="calc-body">
@@ -1477,7 +1487,7 @@ async function viewOrderForm(id) {
       <h2>Pembayaran</h2>
       <div class="two">
         <div class="field"><label>Ongkir ke customer (Rp)</label><input class="input" id="oShip" data-money inputmode="decimal" value="${esc(o.shipping)}" placeholder="0"></div>
-        <div class="field"><label>Diskon (Rp)</label><input class="input" id="oDisc" data-money inputmode="decimal" value="${esc(o.discount)}" placeholder="0"></div>
+        <div class="field"><label>Diskon pesanan (Rp)</label><input class="input" id="oDisc" data-money inputmode="decimal" value="${esc(o.discount)}" placeholder="0"></div>
       </div>
       ${isNew ? `<div class="field"><label>DP / pembayaran awal (Rp)</label>
         <div class="row"><input class="input grow" id="oPaid" data-money inputmode="decimal" placeholder="0"><button type="button" class="btn sm" id="payFull">Lunas</button></div></div>
@@ -1536,9 +1546,11 @@ async function viewOrderForm(id) {
     const t = orderTotals(o, paid);
     $('#oSum').innerHTML = `
       <div class="line"><span>Subtotal (${t.qty} barang)</span><b>${fmtIDR(t.subtotal)}</b></div>
+      ${t.itemDisc ? `<div class="line"><span>Potongan diskon item</span><b>− ${fmtIDR(t.itemDisc)}</b></div>` : ''}
+      ${t.discount ? `<div class="line"><span>Diskon pesanan</span><b>− ${fmtIDR(t.discount)}</b></div>` : ''}
       <div class="line"><span>Ongkir</span><b>${fmtIDR(t.shipping)}</b></div>
-      ${t.discount ? `<div class="line"><span>Diskon</span><b>− ${fmtIDR(t.discount)}</b></div>` : ''}
       <div class="line total"><span>Total tagihan</span><b>${fmtIDR(t.total)}</b></div>
+      ${t.totalDisc ? `<div class="line"><span>Total potongan diskon</span><b style="color:var(--ok)">${fmtIDR(t.totalDisc)}</b></div>` : ''}
       <div class="line"><span>Sisa tagihan</span><b>${fmtIDR(t.due)}</b></div>
       <div class="line"><span>Modal · estimasi profit</span><b>${fmtIDR(t.modal)} · ${fmtIDR(t.profit)}</b></div>`;
   };
@@ -1650,6 +1662,7 @@ async function viewOrderForm(id) {
     if (!o.items.length) { o.items = [blankItem()]; await renderItems(); toast('Tambahkan minimal 1 barang'); return null; }
     const bad = o.items.findIndex((it) => !it.name.trim() || !(num(it.qty) > 0));
     if (bad >= 0) { await renderItems(); toast(`Lengkapi nama & qty barang ${bad + 1}`); cardOf(bad)?.scrollIntoView({ block: 'center' }); return null; }
+    if (['dibeli', 'dikirim', 'selesai'].includes(o.status) && pendingItems(o).length) { toast(`Status "${statusLabel(o.status)}" belum bisa: ${pendingItems(o).length} barang belum dibeli. Centang ✓ / tandai Habis di detail pesanan.`, 4500); return null; }
     // Cek apakah admin lain baru saja mengubah pesanan ini
     if (!isNew && navigator.onLine) {
       try {
@@ -1758,10 +1771,10 @@ function soldOutMessage(o, cu, paid = 0) {
   L.push(`Update pesanan *#${o.code}*${ev ? ` (Jastip ${ev.name})` : o.trip ? ` (${o.trip})` : ''}:`);
   L.push('');
   L.push('Mohon maaf, barang berikut *HABIS / sold out* di toko:');
-  so.forEach((it) => L.push(`❌ ${it.name}${it.note ? ` (${it.note})` : ''} × ${num(it.qty)} — ${fmtIDR(itemSellIDR(it) * num(it.qty))}`));
+  so.forEach((it) => L.push(`❌ ${it.name}${it.note ? ` (${it.note})` : ''} × ${num(it.qty)} — ${fmtIDR(lineNet(it))}`));
   if (ok.length) {
     L.push(''); L.push('Barang yang tetap kami belikan:');
-    ok.forEach((it) => L.push(`✅ ${it.name}${it.note ? ` (${it.note})` : ''} × ${num(it.qty)} — ${fmtIDR(itemSellIDR(it) * num(it.qty))}`));
+    ok.forEach((it) => L.push(`✅ ${it.name}${it.note ? ` (${it.note})` : ''} × ${num(it.qty)} — ${fmtIDR(lineNet(it))}${lineDisc(it) ? ` (sudah dipotong diskon ${fmtIDR(lineDisc(it))})` : ''}`));
     L.push(''); L.push(`*Total pesanan sekarang: ${fmtIDR(t.total)}*`);
     if (t.paid) L.push(`Sudah dibayar: ${fmtIDR(t.paid)}`);
     if (t.over > 0) L.push(`Kelebihan bayar *${fmtIDR(t.over)}* akan kami *refund*, atau bisa dialihkan ke produk lain — Kakak pilih yang mana? 😊`);
@@ -1791,13 +1804,13 @@ function soldOutSheet(o, cu, paid, done) {
 function buildNota(o, cu, paid = 0) {
   const t = orderTotals(o, paid);
   const rincian = o.items.filter((it) => !it.soldOut).map((it, i) => {
-    const unit = itemSellIDR(it);
-    return `${i + 1}. ${it.name}${it.note ? ` (${it.note})` : ''} × ${num(it.qty)} @ ${fmtIDR(unit)} = ${fmtIDR(unit * num(it.qty))}`;
+    const unit = itemSellIDR(it); const d = lineDisc(it);
+    return `${i + 1}. ${it.name}${it.note ? ` (${it.note})` : ''} × ${num(it.qty)} @ ${fmtIDR(unit)} = ${fmtIDR(lineGross(it))}${d ? `\n    Potongan diskon: −${fmtIDR(d)} → *${fmtIDR(lineNet(it))}*` : ''}`;
   }).join('\n') + (o.items.some((it) => it.soldOut) ? '\n\n❌ Habis / tidak terbeli (tidak ditagih):\n' + o.items.filter((it) => it.soldOut).map((it) => `• ${it.name} × ${num(it.qty)}`).join('\n') : '');
   const lacak = trackLink(o);
   const map = {
     nama: cu?.name || '', kode: o.code, trip: o.trip ? ` (${o.trip})` : '', rincian,
-    subtotal: fmtIDR(t.subtotal), ongkir: fmtIDR(t.shipping), diskon: fmtIDR(t.discount), total: fmtIDR(t.total),
+    subtotal: fmtIDR(t.subtotal), ongkir: fmtIDR(t.shipping), diskon: fmtIDR(t.discount), potongan: t.totalDisc ? '−' + fmtIDR(t.totalDisc) : fmtIDR(0), total: fmtIDR(t.total),
     dibayar: fmtIDR(t.paid), sisa: fmtIDR(t.due), status: statusLabel(o.status), usaha: S.business || '',
     lacak, katalog: webBase(), rekening: bankLines().join('\n'), event: evById(o.eventId) ? evLabel(evById(o.eventId)) : (o.trip || ''),
   };
@@ -1806,7 +1819,8 @@ function buildNota(o, cu, paid = 0) {
   if (!bankLines().length) tpl = tpl.split('\n').filter((l) => !l.includes('{rekening}')).join('\n');
   else if (!tpl.includes('{rekening}') && t.due > 0) tpl += '\n\nPembayaran ke:\n{rekening}';
   let txt = tpl.replace(/\{(\w+)\}/g, (m, k) => (k in map ? map[k] : m));
-  if (t.discount && !/\{diskon\}/.test(tpl)) txt = txt.replace('*Total:', `Diskon: − ${fmtIDR(t.discount)}\n*Total:`);
+  if (!t.totalDisc) txt = txt.split('\n').filter((l) => !/^Potongan diskon: Rp 0$/.test(l)).join('\n');
+  else if (!/\{potongan\}/.test(tpl) && !/\{diskon\}/.test(tpl)) txt = txt.replace('*Total:', `Total potongan diskon: −${fmtIDR(t.totalDisc)}\n*Total:`);
   return txt.replace(/\n{3,}/g, '\n\n');
 }
 
@@ -1844,17 +1858,17 @@ async function viewOrderDetail(id) {
         <div class="list-item ${it.bought ? 'done' : ''} ${it.soldOut ? 'soldout' : ''}" style="border:0;padding:10px 0;margin:0;border-bottom:1px solid var(--line);border-radius:0;background:none">
           ${thumbHTML(thumbOf(it), true)}
           <div style="flex:1;min-width:0"><div class="title">${it.soldOut ? '<span class="badge so-badge">HABIS</span> ' : it.bought ? '<span class="badge ok-badge">✓ Sudah dibeli</span> ' : ''}${esc(it.name)}</div>
-            <div class="sub">${num(it.qty)} × ${fmtIDR(itemSellIDR(it))}${isShopper() || !num(it.buyPrice) ? '' : ` · beli ${fmtCur(it.buyPrice, it.buyCur)}`}${it.weight ? ` · ${num(it.weight)} g` : ''}${it.note ? ` · ${esc(it.note)}` : ''}</div></div>
+            <div class="sub">${num(it.qty)} × ${fmtIDR(itemSellIDR(it))}${lineDisc(it) ? ` · <span style="color:var(--ok)">diskon −${fmtIDR(lineDisc(it))}</span>` : ''}${isShopper() || !num(it.buyPrice) ? '' : ` · beli ${fmtCur(it.buyPrice, it.buyCur)}`}${it.weight ? ` · ${num(it.weight)} g` : ''}${it.note ? ` · ${esc(it.note)}` : ''}</div></div>
           ${['baru', 'dibeli'].includes(o.status) ? `<div class="item-acts">${it.bought ? '' : `<button class="so-btn ${it.soldOut ? 'on' : ''}" data-so="${i}" aria-label="Tandai habis / tidak terbeli">${it.soldOut ? 'Habis ✕' : 'Habis?'}</button>`}${it.soldOut ? '' : `<button class="check ${it.bought ? 'on' : ''}" data-buy="${i}" aria-label="Tandai sudah dibeli">✓</button>`}</div>`
-            : `<div class="amount">${it.soldOut ? '<s>' + fmtIDR(itemSellIDR(it) * num(it.qty)) + '</s>' : fmtIDR(itemSellIDR(it) * num(it.qty))}</div>`}
+            : `<div class="amount">${it.soldOut ? '<s>' + fmtIDR(lineNet(it)) + '</s>' : fmtIDR(lineNet(it))}</div>`}
         </div>`).join('')}
       ${t.soldOutCount ? `<div class="alert warn" style="margin-top:12px"><b>${t.soldOutCount} barang habis / tidak terbeli</b> (${fmtIDR(t.soldOutValue)}) — tidak ditagih.
         ${t.over > 0 ? `<br>Customer <b>kelebihan bayar ${fmtIDR(t.over)}</b> → refund atau alihkan ke produk lain.` : ''}
         <div class="btn-col" style="margin-top:10px">${isShopper() ? '' : '<button class="btn wa" id="notifySO">📣 Kabari customer via WhatsApp</button>'}${t.over > 0 && canSell() ? `<button class="btn" id="refundSO">Catat refund ${fmtIDR(t.over)}</button>` : ''}</div></div>` : ''}
       <div class="result" style="margin-top:14px">
         <div class="line"><span>Subtotal</span><b>${fmtIDR(t.subtotal)}</b></div>
+        ${t.totalDisc ? `<div class="line"><span>Total potongan diskon</span><b>− ${fmtIDR(t.totalDisc)}</b></div>` : ''}
         <div class="line"><span>Ongkir</span><b>${fmtIDR(t.shipping)}</b></div>
-        ${t.discount ? `<div class="line"><span>Diskon</span><b>− ${fmtIDR(t.discount)}</b></div>` : ''}
         <div class="line total"><span>Total</span><b>${fmtIDR(t.total)}</b></div>
         ${isShopper() ? '' : `<div class="line"><span>Sudah dibayar</span><b>${fmtIDR(t.paid)}</b></div>
         <div class="line"><span>${t.over > 0 ? 'Kelebihan bayar' : 'Sisa'}</span><b>${fmtIDR(t.over > 0 ? t.over : t.due)}</b></div>
@@ -1893,7 +1907,20 @@ async function viewOrderDetail(id) {
   });
   on('#rejectO', async () => { if (await confirmSheet(`Tolak pesanan #${o.code}?`, 'Tolak')) { o.status = 'batal'; o.pic = ME.id; o.picName = ME.name; await save('Pesanan ditolak'); } });
   on('#takeO', async () => { o.pic = ME.id; o.picName = ME.name; await save('Pesanan sekarang Anda tangani'); });
-  $$('[data-st]').forEach((b) => b.onclick = async () => { o.status = b.dataset.st; await save('Status: ' + statusLabel(o.status)); });
+  $$('[data-st]').forEach((b) => b.onclick = async () => {
+    const to = b.dataset.st; if (to === o.status) return;
+    const pend = pendingItems(o);
+    if (['dibeli', 'dikirim', 'selesai'].includes(to)) {
+      if (pend.length) return confirmSheet(`Belum bisa ubah ke "${statusLabel(to)}"`, 'Mengerti', false,
+        `${pend.length} dari ${o.items.length} barang belum dibeli: ${pend.map((x) => x.name).slice(0, 3).join(', ')}${pend.length > 3 ? ', …' : ''}. Centang ✓ bila sudah dibeli, atau tandai Habis bila tidak terbeli.`);
+      if (o.items.length && o.items.every((x) => x.soldOut)) return confirmSheet('Semua barang habis', 'Mengerti', false, 'Tidak ada barang yang dibeli. Ubah status ke "Batal" dan catat refund bila sudah dibayar.');
+    }
+    const tt = orderTotals(o, paid);
+    const notes = { dibeli: 'Semua barang sudah dibeli / ditandai habis.', dikirim: 'Pastikan barang benar-benar sudah dikirim ke customer.' + (tt.due > 0 ? ` Masih ada sisa tagihan ${fmtIDR(tt.due)}.` : ''),
+      selesai: 'Pesanan dianggap sudah diterima customer.' + (tt.due > 0 ? ` ⚠️ Masih ada sisa tagihan ${fmtIDR(tt.due)}.` : ''), batal: 'Pesanan dibatalkan.' + (tt.paid > 0 ? ` Sudah ada pembayaran ${fmtIDR(tt.paid)} — jangan lupa refund.` : ''), baru: 'Pesanan kembali ke status Baru.' };
+    if (!(await confirmSheet(`Ubah status #${o.code}: ${statusLabel(o.status)} → ${statusLabel(to)}?`, `Ya, ubah ke ${statusLabel(to)}`, to === 'batal', notes[to] || ''))) return;
+    o.status = to; await save('Status: ' + statusLabel(o.status));
+  });
   $$('[data-buy]').forEach((b) => b.onclick = async () => {
     const it = o.items[+b.dataset.buy]; it.bought = !it.bought; if (it.bought) it.soldOut = false;
     autoBoughtStatus(o);
@@ -2739,7 +2766,8 @@ async function buildInvoicePDF(o, cu, pays) {
     if (cat) { doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...GREY); doc.text(cat, nx, ny + name.length * 4.3 + 0.2); }
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(...INK);
     put(String(q), 2, mid + 1.2); put('Rp ' + nfmt(unit), 3, mid + 1.2);
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(10); put(it.soldOut ? 'HABIS' : 'Rp ' + nfmt(unit * q), 4, mid + 1.2);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(10); put(it.soldOut ? 'HABIS' : 'Rp ' + nfmt(lineNet(it)), 4, mid + (lineDisc(it) && !it.soldOut ? -0.6 : 1.2));
+    if (lineDisc(it) && !it.soldOut) { doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(23, 145, 95); put('diskon -' + nfmt(lineDisc(it)), 4, mid + 3.6); doc.setTextColor(...INK); }
     y += h;
     doc.setDrawColor(...SEP); doc.setLineWidth(0.3); doc.line(M + 1, y, M + CW - 1, y);
   });
@@ -2757,7 +2785,7 @@ async function buildInvoicePDF(o, cu, pays) {
   y += 1;
   sumRow('Sub Total', 'Rp ' + nfmt(t.subtotal), true);
   sumRow('Ongkir', t.shipping ? 'Rp ' + nfmt(t.shipping) : '-');
-  if (t.discount) sumRow('Diskon', '- Rp ' + nfmt(t.discount));
+  if (t.totalDisc) sumRow('Total potongan diskon', '- Rp ' + nfmt(t.totalDisc));
   sumRow(pays.length > 1 ? 'Sudah dibayar' : 'DP', t.paid ? '- Rp ' + nfmt(t.paid) : '-');
   y += 2.5;
   // bar total pelunasan

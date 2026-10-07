@@ -70,7 +70,7 @@
           <div style="margin-top:10px">
             <div class="row"><span>Subtotal</span><b>${fmtIDR(o.subtotal)}</b></div>
             <div class="row"><span>Ongkir</span><b>${Number(o.shipping) ? fmtIDR(o.shipping) : (o.status === 'menunggu' ? 'dikonfirmasi admin' : fmtIDR(0))}</b></div>
-            ${Number(o.discount) ? `<div class="row"><span>Diskon</span><b>− ${fmtIDR(o.discount)}</b></div>` : ''}
+            ${(Number(o.subtotal) + Number(o.shipping) - Number(o.total)) > 0 ? `<div class="row"><span>Potongan diskon</span><b>− ${fmtIDR(Number(o.subtotal) + Number(o.shipping) - Number(o.total))}</b></div>` : ''}
             <div class="row total"><span>Total</span><b>${fmtIDR(o.total)}</b></div>
             <div class="row"><span>Sudah dibayar</span><b>${fmtIDR(o.paid)}</b></div>
             ${Number(o.paid) > Number(o.total) ? `<div class="row"><span>Kelebihan bayar (refund)</span><b>${fmtIDR(Number(o.paid) - Number(o.total))}</b></div>` : `<div class="row"><span>Sisa tagihan</span><b>${due > 0 ? fmtIDR(due) : '<span class="badge b-ok">Lunas</span>'}</b></div>`}
