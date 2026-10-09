@@ -2083,7 +2083,7 @@ async function viewProducts() {
     <p class="eyebrow">Katalog</p>
     <h1 class="page-title">Produk</h1>
     <p class="page-sub">Katalog ini juga tampil di web untuk buyer (produk yang ditandai tampil & punya harga jual).</p>
-    ${webBase() ? `<button class="btn sm" id="shareCat" style="margin-bottom:12px">🔗 Bagikan link katalog</button>` : ''}
+    <div class="row" style="gap:8px;flex-wrap:wrap;margin-bottom:12px">${webBase() ? `<button class="btn sm" id="shareCat">🔗 Bagikan link katalog</button>` : ''}<button class="btn sm" id="dlCat">📄 Download katalog PDF</button></div>
     <div class="search"><input class="input" id="pq" placeholder="Cari produk / brand…" value="${esc(viewProducts.q || '')}"></div>
     ${EVENTS.length ? evChips(evP, 'data-evp') : ''}
     ${catsUsed.length ? `<div class="chips">${['', ...catsUsed].map((c) => `<button class="chip ${c === catSel ? 'on' : ''}" data-cat="${esc(c)}">${c ? esc(catIcon(c) + ' ' + c) : 'Semua kategori'}</button>`).join('')}</div>` : ''}
@@ -2105,6 +2105,7 @@ async function viewProducts() {
   $$('[data-cat]').forEach((b) => b.onclick = () => { viewProducts.cat = b.dataset.cat; viewProducts(); });
   $$('[data-evp]').forEach((b) => b.onclick = () => { viewProducts.ev = b.dataset.evp; viewProducts.cat = ''; viewProducts.brand = ''; viewProducts(); });
   view.onclick = async (e) => { const b = e.target.closest('[data-share-prod]'); if (!b) return; e.preventDefault(); e.stopPropagation(); const p = await DB.get('products', b.dataset.shareProd); if (p) shareProduct(p, evP); };
+  $('#dlCat').onclick = catalogSheet;
   const sc = $('#shareCat'); if (sc) sc.onclick = () => { const e = evById(evP) || curEv(); shareText('Katalog ' + S.business, `${e ? `${e.title} ${e.name}${e.poStart || e.poEnd ? ' (' + fmtRangeD(e.poStart, e.poEnd) + ')' : ''}` : 'Katalog jastip'} — ${S.business}\n${webBase()}${e ? '?e=' + encodeURIComponent(e.code.toLowerCase()) : ''}`); };
 }
 
@@ -2664,7 +2665,7 @@ async function imgDataUrl(src) {
 }
 const nfmt = (n) => Math.round(num(n)).toLocaleString('id-ID');
 // foto barang → JPEG kecil persegi untuk PDF (lokal dulu, lalu server)
-async function pdfThumb(id, size = 240) {
+async function pdfThumb(id, size = 240, ratio = 1) {
   if (!id) return '';
   try {
     let src = photoCache.get(id);
@@ -2672,11 +2673,12 @@ async function pdfThumb(id, size = 240) {
     if (!src) src = photoUrl(id);
     const blob = await (await fetch(src)).blob();
     const bmp = await createImageBitmap(blob);
-    const c = document.createElement('canvas'); c.width = c.height = size;
-    const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, size, size);
-    const k = Math.max(size / bmp.width, size / bmp.height);  // isi penuh (crop tengah)
+    const CWp = size, CHp = Math.round(size / ratio);
+    const c = document.createElement('canvas'); c.width = CWp; c.height = CHp;
+    const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, CWp, CHp);
+    const k = Math.max(CWp / bmp.width, CHp / bmp.height);  // isi penuh (crop tengah)
     const w = bmp.width * k, h = bmp.height * k;
-    g.drawImage(bmp, (size - w) / 2, (size - h) / 2, w, h);
+    g.drawImage(bmp, (CWp - w) / 2, (CHp - h) / 2, w, h);
     return c.toDataURL('image/jpeg', 0.78);
   } catch (e) { return ''; }
 }
@@ -2986,6 +2988,186 @@ async function printLabel(o, cu) {
   const blob = r.doc.output('blob'); const url = URL.createObjectURL(blob);
   const a = document.createElement('a'); a.href = url; a.download = r.name; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+
+/* ================= Katalog PDF (2 kolom × 5 baris per halaman) ================= */
+const catProductsFor = (all, evId, brand, withHidden) => all
+  .filter((p) => !evId || !(p.events || []).length || p.events.includes(evId))
+  .filter((p) => !brand || p.brand === brand)
+  .filter((p) => withHidden || p.published !== false)
+  .sort((a, b) => (a.brand || '').localeCompare(b.brand || '') || num(a.sort) - num(b.sort) || (a.name || '').localeCompare(b.name || ''));
+function catalogDefaults(ev, brand, prods) {
+  const place = ev ? (ev.country && !/^indonesia$/i.test(ev.country) ? ev.country : ev.name || '') : '';
+  const brands = [...new Set(prods.map((p) => p.brand).filter(Boolean))];
+  const cats = [...new Set(prods.map((p) => p.category).filter(Boolean))];
+  return {
+    title: (place ? 'Jastip ' + place : 'Katalog Jastip').toUpperCase(),
+    sub: (brand || (brands.length === 1 ? brands[0] : brands.length && brands.length <= 3 ? brands.join(' · ') : 'Multi Brand')).toUpperCase(),
+    tag: cats.length === 1 ? cats[0] + ' Collection' : cats.length && cats.length <= 3 ? cats.join(' · ') : 'Product Collection',
+  };
+}
+function catalogSheet() {
+  const st = { ev: viewProducts.ev || curEv()?.id || '', brand: viewProducts.brand || '', price: true, hidden: false, edited: {} };
+  let all = [];
+  openSheet(`<h3>📄 Download katalog PDF</h3>
+    <p class="muted small" style="margin-top:-4px">2 kolom × 5 baris per halaman (10 produk). Lebih dari 10 produk otomatis lanjut ke halaman berikutnya.</p>
+    ${EVENTS.length ? `<div class="field"><label>Event jastip</label><div id="cEvs"></div></div>` : ''}
+    <div class="field"><label>Brand / toko</label><div id="cBrs"></div></div>
+    <div class="field"><label>Judul</label><input class="input" id="cTitle" autocapitalize="characters"></div>
+    <div class="field"><label>Subjudul (brand / nama toko)</label><input class="input" id="cSub" autocapitalize="characters"></div>
+    <div class="field"><label>Keterangan kecil</label><input class="input" id="cTag"></div>
+    <div class="toggle-row"><span>Tampilkan harga jual</span><label class="switch"><input type="checkbox" id="cPrice" checked><span></span></label></div>
+    <div class="toggle-row"><span>Sertakan produk tersembunyi</span><label class="switch"><input type="checkbox" id="cHid"><span></span></label></div>
+    <p class="muted" id="cInfo" style="margin:10px 0"></p>
+    <div class="btn-col"><button class="btn primary" id="cGo">📄 Buat katalog PDF</button><button class="btn ghost" data-close>Tutup</button></div>`, async (s) => {
+    $('[data-close]', s).onclick = closeSheet;
+    all = await DB.all('products');
+    const paint = () => {
+      const evP = all.filter((p) => !st.ev || !(p.events || []).length || p.events.includes(st.ev)).filter((p) => st.hidden || p.published !== false);
+      const brands = [...new Set(evP.map((p) => p.brand).filter(Boolean))].sort();
+      if (st.brand && !brands.includes(st.brand)) st.brand = '';
+      const ce = $('#cEvs', s);
+      if (ce) ce.innerHTML = `<div class="chips" style="flex-wrap:wrap">${activeEvents().map((e) => `<button type="button" class="chip ${e.id === st.ev ? 'on' : ''}" data-cev="${e.id}">${esc(evLabel(e))}</button>`).join('')}</div>`;
+      $('#cBrs', s).innerHTML = `<div class="chips" style="flex-wrap:wrap">${['', ...brands].map((b) => `<button type="button" class="chip ${b === st.brand ? 'on' : ''}" data-cbr="${esc(b)}">${b ? esc(b) : 'Semua brand'}</button>`).join('')}</div>`;
+      const prods = catProductsFor(all, st.ev, st.brand, st.hidden);
+      const d = catalogDefaults(evById(st.ev), st.brand, prods);
+      if (!st.edited.cTitle) $('#cTitle', s).value = d.title;
+      if (!st.edited.cSub) $('#cSub', s).value = d.sub;
+      if (!st.edited.cTag) $('#cTag', s).value = d.tag;
+      const pages = Math.ceil(prods.length / 10);
+      $('#cInfo', s).innerHTML = prods.length ? `<b>${prods.length} produk</b> → ${pages} halaman` : 'Tidak ada produk untuk pilihan ini.';
+      $('#cGo', s).disabled = !prods.length;
+      $$('[data-cev]', s).forEach((b) => b.onclick = () => { st.ev = b.dataset.cev; st.brand = ''; st.edited.cTitle = st.edited.cSub = st.edited.cTag = false; paint(); });
+      $$('[data-cbr]', s).forEach((b) => b.onclick = () => { st.brand = b.dataset.cbr; st.edited.cSub = st.edited.cTag = false; paint(); });
+    };
+    ['cTitle', 'cSub', 'cTag'].forEach((id) => $('#' + id, s).oninput = () => { st.edited[id] = true; });
+    $('#cPrice', s).onchange = (e) => { st.price = e.target.checked; };
+    $('#cHid', s).onchange = (e) => { st.hidden = e.target.checked; paint(); };
+    paint();
+    $('#cGo', s).onclick = async () => {
+      const prods = catProductsFor(all, st.ev, st.brand, st.hidden);
+      const opt = { title: $('#cTitle', s).value.trim(), sub: $('#cSub', s).value.trim(), tag: $('#cTag', s).value.trim(), price: st.price, ev: evById(st.ev) };
+      const btn = $('#cGo', s); btn.disabled = true; btn.textContent = 'Menyiapkan foto…';
+      let r;
+      try { r = await buildCatalogPDF(prods, opt, (k, n) => { btn.textContent = `Menyiapkan foto ${k}/${n}…`; }); }
+      catch (e) { console.error(e); btn.disabled = false; btn.textContent = '📄 Buat katalog PDF'; return toast('Gagal membuat katalog: ' + (e.message || e), 4000); }
+      closeSheet();
+      await deliverPDF(r, 'Katalog ' + (opt.sub || opt.title), 'Kirim / simpan katalog');
+    };
+  });
+}
+async function buildCatalogPDF(prods, opt, onProg) {
+  const { jsPDF } = await loadJsPDF();
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  const W = 210, H = 297, M = 10;
+  const INK = [33, 35, 41], TAN = [196, 164, 134], TANBG = [240, 226, 211], GREY = [96, 98, 106], SEP = [226, 222, 218], PH = [244, 241, 238];
+  const COLS = 2, ROWS = 5, PER = COLS * ROWS;
+  const top = 50, bottom = H - 12;
+  const rowH = (bottom - top) / ROWS, colW = (W - M * 2) / COLS;
+  const phW = 47, phH = rowH - 4.4;
+  // foto (paralel, 6 sekaligus)
+  const thumbs = new Array(prods.length).fill('');
+  for (let i = 0; i < prods.length; i += 6) {
+    await Promise.all(prods.slice(i, i + 6).map(async (p, j) => { thumbs[i + j] = await pdfThumb((p.photos && p.photos[0]) || p.photo, 420, phW / phH); }));
+    onProg && onProg(Math.min(i + 6, prods.length), prods.length);
+  }
+  // teks dengan spasi huruf, rata tengah
+  const spaced = (t, y, size, color, cs, style = 'bold') => {
+    doc.setFont('helvetica', style); doc.setFontSize(size); doc.setTextColor(...color);
+    const w = doc.getTextWidth(t) + cs * Math.max(0, t.length - 1);
+    const x = (W - w) / 2; doc.text(t, x, y, { charSpace: cs }); return [x, x + w];
+  };
+  const fit = (txt, maxW, lines) => {
+    let out = doc.splitTextToSize(txt, maxW);
+    if (out.length > lines) {
+      out = out.slice(0, lines); let last = out[lines - 1];
+      while (last.length > 1 && doc.getTextWidth(last + '…') > maxW) last = last.slice(0, -1);
+      out[lines - 1] = last.replace(/[\s,.;:-]+$/, '') + '…';
+    }
+    return out;
+  };
+  const concise = (d) => pdfTxt(String(d || '').split('\n').map((l) => l.replace(/^[\s\-•*·✓✔]+/, '').trim()).filter(Boolean).join(' · '));
+  const pages = Math.ceil(prods.length / PER) || 1;
+  const ev = opt.ev;
+  const foot = [S.ownerWa ? 'Order via WhatsApp ' + fmtPhone(S.ownerWa) : '', ev && (ev.poStart || ev.poEnd) ? 'PO ' + fmtRangeD(ev.poStart, ev.poEnd) : ''].filter(Boolean).join('   ·   ');
+  for (let pg = 0; pg < pages; pg++) {
+    if (pg) doc.addPage();
+    // judul
+    let ts = 34; doc.setFont('helvetica', 'bold');
+    const title = pdfTxt(opt.title) || 'KATALOG';
+    doc.setFontSize(ts); while (ts > 16 && doc.getTextWidth(title) + 0.6 * title.length > W - M * 2) doc.setFontSize(--ts);
+    spaced(title, 24, ts, INK, 0.6);
+    const sub = pdfTxt(opt.sub);
+    if (sub) {
+      let ss = 17; doc.setFont('helvetica', 'bold'); doc.setFontSize(ss);
+      while (ss > 9 && doc.getTextWidth(sub) + 3 * sub.length > W - 80) doc.setFontSize(--ss);
+      const [x1, x2] = spaced(sub, 35.5, ss, TAN, ss > 12 ? 3.2 : 1.6);
+      doc.setDrawColor(...TAN); doc.setLineWidth(0.45);
+      if (x1 - 7 > M + 16) doc.line(M + 16, 33.2, x1 - 7, 33.2);
+      if (W - M - 16 > x2 + 7) doc.line(x2 + 7, 33.2, W - M - 16, 33.2);
+    }
+    const tag = pdfTxt(opt.tag);
+    if (tag) spaced(tag, 43, 10, INK, 1.7, 'normal');
+    // grid
+    for (let k = 0; k < PER; k++) {
+      const i = pg * PER + k; if (i >= prods.length) break;
+      const p = prods[i]; const r = Math.floor(k / COLS), c = k % COLS;
+      const cx = M + c * colW, cy = top + r * rowH;
+      const ix = cx + (c ? 3 : 0.5), iy = cy + 2.2;
+      // foto (sudut membulat)
+      doc.saveGraphicsState(); doc.roundedRect(ix, iy, phW, phH, 2.4, 2.4, null); doc.clip(); doc.discardPath();
+      if (thumbs[i]) doc.addImage(thumbs[i], 'JPEG', ix, iy, phW, phH, undefined, 'FAST');
+      else { doc.setFillColor(...PH); doc.rect(ix, iy, phW, phH, 'F'); doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(170, 166, 160); doc.text('Foto menyusul', ix + phW / 2, iy + phH / 2, { align: 'center' }); }
+      doc.restoreGraphicsState();
+      // teks
+      const tx = ix + phW + 4.5, tw = cx + colW - tx - (c ? 0.5 : 3.5);
+      let y = cy + 11;
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(25); doc.setTextColor(...TAN); doc.text(String(i + 1).padStart(2, '0'), tx, y);
+      const cat = pdfTxt([p.category, !opt.sub || opt.sub.includes('·') || opt.sub === 'MULTI BRAND' ? p.brand : ''].filter(Boolean).join(' · ')).toUpperCase();
+      y += 5.2;
+      if (cat) { doc.setFontSize(6.8); doc.setTextColor(...TAN); doc.text(fit(cat, tw, 1)[0], tx, y, { charSpace: 0.5 }); y += 4.8; } else y += 1.5;
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(10.5); doc.setTextColor(...INK);
+      const nm = fit(pdfTxt(p.name) || '-', tw, 2); doc.text(nm, tx, y, { lineHeightFactor: 1.12 }); y += nm.length * 4.15 + 0.6;
+      const pillY = cy + rowH - 10.6;
+      const ds = concise(p.description);
+      if (ds) {
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(8.4); doc.setTextColor(...GREY);
+        const maxL = y <= pillY - 2 ? Math.floor((pillY - 2 - y) / 3.55) + 1 : 0;
+        if (maxL) { const dl = fit(ds, tw, Math.min(3, maxL)); doc.text(dl, tx, y, { lineHeightFactor: 1.2 }); }
+      }
+      // pil harga
+      const price = opt.price && num(p.sellPrice) ? 'Harga: Rp ' + nfmt(p.sellPrice) : 'Harga: hubungi admin';
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(8.2);
+      const pw = Math.min(tw, doc.getTextWidth(price) + 7);
+      doc.setFillColor(...TANBG); doc.roundedRect(tx, pillY, pw, 6.6, 3.3, 3.3, 'F');
+      doc.setTextColor(...INK); doc.text(price, tx + pw / 2, pillY + 4.45, { align: 'center' });
+    }
+    // garis pemisah
+    const n = Math.min(PER, prods.length - pg * PER), usedRows = Math.ceil(n / COLS);
+    doc.setDrawColor(...SEP); doc.setLineWidth(0.3);
+    for (let r = 1; r < usedRows; r++) doc.line(M, top + r * rowH, W - M, top + r * rowH);
+    for (let r = 0; r < usedRows; r++) if (n > r * COLS + 1) doc.line(M + colW, top + r * rowH + 2.5, M + colW, top + (r + 1) * rowH - 2.5);
+    // footer
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(...GREY);
+    if (foot) doc.text(pdfTxt(foot), M, H - 5.5);
+    doc.text(`${pg + 1} / ${pages}`, W - M, H - 5.5, { align: 'right' });
+  }
+  const safe = (x) => String(x || '').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-');
+  return { doc, name: `Katalog-${safe(opt.title) || 'Jastip'}${opt.sub ? '-' + safe(opt.sub) : ''}.pdf` };
+}
+async function deliverPDF(r, title, dialogTitle) {
+  const Fs = plugin('Filesystem'); const Share = plugin('Share');
+  if (isNative() && Fs && Share) {
+    try {
+      const w = await Fs.writeFile({ path: r.name, data: r.doc.output('datauristring').split(',')[1], directory: 'CACHE' });
+      await Share.share({ title, files: [w.uri], dialogTitle });
+    } catch (e) { if (!/cancel/i.test(String(e && e.message))) toast('Gagal membagikan: ' + (e.message || e), 4000); }
+    return;
+  }
+  const blob = r.doc.output('blob'); const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = r.name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  toast('Katalog diunduh ✓');
 }
 
 async function sendInvoice(o, cu, pays) {
