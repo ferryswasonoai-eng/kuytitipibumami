@@ -2993,12 +2993,12 @@ async function printLabel(o, cu) {
 /* ================= Katalog PDF (2 kolom × 5 baris per halaman) ================= */
 const catProductsFor = (all, evId, brand, withHidden) => all
   .filter((p) => !evId || !(p.events || []).length || p.events.includes(evId))
-  .filter((p) => !brand || p.brand === brand)
+  .filter((p) => !brand || String(p.brand || '').trim().toUpperCase() === String(brand).trim().toUpperCase())
   .filter((p) => withHidden || p.published !== false)
-  .sort((a, b) => (a.brand || '').localeCompare(b.brand || '') || num(a.sort) - num(b.sort) || (a.name || '').localeCompare(b.name || ''));
+  .sort((a, b) => String(a.brand || '').trim().toUpperCase().localeCompare(String(b.brand || '').trim().toUpperCase()) || num(a.sort) - num(b.sort) || (a.name || '').localeCompare(b.name || ''));
 function catalogDefaults(ev, brand, prods) {
   const place = ev ? (ev.country && !/^indonesia$/i.test(ev.country) ? ev.country : ev.name || '') : '';
-  const brands = [...new Set(prods.map((p) => p.brand).filter(Boolean))];
+  const brands = [...new Set(prods.map((p) => String(p.brand || '').trim().toUpperCase()).filter(Boolean))];
   const cats = [...new Set(prods.map((p) => p.category).filter(Boolean))];
   return {
     title: (place ? 'Jastip ' + place : 'Katalog Jastip').toUpperCase(),
@@ -3024,7 +3024,7 @@ function catalogSheet() {
     all = await DB.all('products');
     const paint = () => {
       const evP = all.filter((p) => !st.ev || !(p.events || []).length || p.events.includes(st.ev)).filter((p) => st.hidden || p.published !== false);
-      const brands = [...new Set(evP.map((p) => p.brand).filter(Boolean))].sort();
+      const brands = [...new Set(evP.map((p) => String(p.brand || '').trim().toUpperCase()).filter(Boolean))].sort();
       if (st.brand && !brands.includes(st.brand)) st.brand = '';
       const ce = $('#cEvs', s);
       if (ce) ce.innerHTML = `<div class="chips" style="flex-wrap:wrap">${activeEvents().map((e) => `<button type="button" class="chip ${e.id === st.ev ? 'on' : ''}" data-cev="${e.id}">${esc(evLabel(e))}</button>`).join('')}</div>`;
@@ -3060,95 +3060,116 @@ async function buildCatalogPDF(prods, opt, onProg) {
   const { jsPDF } = await loadJsPDF();
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   const W = 210, H = 297, M = 10;
-  const INK = [33, 35, 41], TAN = [196, 164, 134], TANBG = [240, 226, 211], GREY = [96, 98, 106], SEP = [226, 222, 218], PH = [244, 241, 238];
+  const INK = [28, 30, 36], GREY = [104, 106, 114], LIGHT = [150, 150, 158], GRID = [232, 229, 229], ACC = [190, 156, 126];
+  const BADGE = [252, 226, 226], BADGE_T = [150, 52, 58];
+  // warna pil harga pastel — satu warna per brand
+  const PASTEL = [[252, 223, 226], [250, 242, 206], [221, 234, 250], [244, 232, 219], [226, 244, 229], [238, 228, 248]];
+  const brandKey = (p) => String(p.brand || '').trim().toUpperCase();
+  const brandsOrder = [...new Set(prods.map(brandKey))];
+  const pillOf = (p) => PASTEL[Math.max(0, brandsOrder.indexOf(brandKey(p))) % PASTEL.length];
   const COLS = 2, ROWS = 5, PER = COLS * ROWS;
-  const top = 50, bottom = H - 12;
+  const top = 49, bottom = H - 11;
   const rowH = (bottom - top) / ROWS, colW = (W - M * 2) / COLS;
-  const phW = 47, phH = rowH - 4.4;
+  const phW = 41, phH = rowH - 12;
   // foto (paralel, 6 sekaligus)
   const thumbs = new Array(prods.length).fill('');
   for (let i = 0; i < prods.length; i += 6) {
-    await Promise.all(prods.slice(i, i + 6).map(async (p, j) => { thumbs[i + j] = await pdfThumb((p.photos && p.photos[0]) || p.photo, 420, phW / phH); }));
+    await Promise.all(prods.slice(i, i + 6).map(async (p, j) => { thumbs[i + j] = await pdfThumb((p.photos && p.photos[0]) || p.photo, 400, phW / phH); }));
     onProg && onProg(Math.min(i + 6, prods.length), prods.length);
   }
-  // teks dengan spasi huruf, rata tengah
-  const spaced = (t, y, size, color, cs, style = 'bold') => {
-    doc.setFont('helvetica', style); doc.setFontSize(size); doc.setTextColor(...color);
-    const w = doc.getTextWidth(t) + cs * Math.max(0, t.length - 1);
-    const x = (W - w) / 2; doc.text(t, x, y, { charSpace: cs }); return [x, x + w];
+  // lebar teks termasuk spasi huruf
+  const tw_ = (t, cs = 0) => doc.getTextWidth(t) + cs * Math.max(0, t.length - 1);
+  const spaced = (t, y, size, color, cs, style = 'bold', font = 'helvetica') => {
+    doc.setFont(font, style); doc.setFontSize(size); doc.setTextColor(...color);
+    const w = tw_(t, cs); const x = (W - w) / 2; doc.text(t, x, y, { charSpace: cs }); return [x, x + w];
+  };
+  const clip1 = (t, maxW, cs = 0) => {
+    if (tw_(t, cs) <= maxW) return t;
+    while (t.length > 1 && tw_(t + '…', cs) > maxW) t = t.slice(0, -1);
+    return t.replace(/[\s,.;:·-]+$/, '') + '…';
   };
   const fit = (txt, maxW, lines) => {
     let out = doc.splitTextToSize(txt, maxW);
-    if (out.length > lines) {
-      out = out.slice(0, lines); let last = out[lines - 1];
-      while (last.length > 1 && doc.getTextWidth(last + '…') > maxW) last = last.slice(0, -1);
-      out[lines - 1] = last.replace(/[\s,.;:-]+$/, '') + '…';
-    }
+    if (out.length > lines) { out = out.slice(0, lines); out[lines - 1] = clip1(out[lines - 1] + ' …', maxW).replace(/\s…$/, '…'); }
     return out;
   };
   const concise = (d) => pdfTxt(String(d || '').split('\n').map((l) => l.replace(/^[\s\-•*·✓✔]+/, '').trim()).filter(Boolean).join(' · '));
+  const idrK = (v) => { v = Math.round(num(v)); return v % 1000 === 0 ? 'IDR ' + (v / 1000).toLocaleString('id-ID') + 'K' : 'IDR ' + v.toLocaleString('id-ID'); };
   const pages = Math.ceil(prods.length / PER) || 1;
-  const ev = opt.ev;
   for (let pg = 0; pg < pages; pg++) {
     if (pg) doc.addPage();
-    // judul
-    let ts = 34; doc.setFont('helvetica', 'bold');
+    // ===== judul
     const title = pdfTxt(opt.title) || 'KATALOG';
-    doc.setFontSize(ts); while (ts > 16 && doc.getTextWidth(title) + 0.6 * title.length > W - M * 2) doc.setFontSize(--ts);
-    spaced(title, 24, ts, INK, 0.6);
+    let ts = 32; doc.setFont('helvetica', 'bold'); doc.setFontSize(ts);
+    while (ts > 16 && tw_(title, 0.5) > W - M * 2) doc.setFontSize(--ts);
+    spaced(title, 22, ts, INK, 0.5);
     const sub = pdfTxt(opt.sub);
     if (sub) {
-      let ss = 17; doc.setFont('helvetica', 'bold'); doc.setFontSize(ss);
-      while (ss > 9 && doc.getTextWidth(sub) + 3 * sub.length > W - 80) doc.setFontSize(--ss);
-      const [x1, x2] = spaced(sub, 35.5, ss, TAN, ss > 12 ? 3.2 : 1.6);
-      doc.setDrawColor(...TAN); doc.setLineWidth(0.45);
-      if (x1 - 7 > M + 16) doc.line(M + 16, 33.2, x1 - 7, 33.2);
-      if (W - M - 16 > x2 + 7) doc.line(x2 + 7, 33.2, W - M - 16, 33.2);
+      let ss = 15; doc.setFont('times', 'bold'); doc.setFontSize(ss);
+      while (ss > 9 && tw_(sub, 1.2) > W - 90) doc.setFontSize(--ss);
+      const [x1, x2] = spaced(sub, 33, ss, ACC, 1.2, 'bold', 'times');
+      doc.setDrawColor(...ACC); doc.setLineWidth(0.35);
+      if (x1 - 6 > M + 22) doc.line(M + 22, 31.2, x1 - 6, 31.2);
+      if (W - M - 22 > x2 + 6) doc.line(x2 + 6, 31.2, W - M - 22, 31.2);
     }
     const tag = pdfTxt(opt.tag);
-    if (tag) spaced(tag, 43, 10, INK, 1.7, 'normal');
-    // grid
-    for (let k = 0; k < PER; k++) {
-      const i = pg * PER + k; if (i >= prods.length) break;
-      const p = prods[i]; const r = Math.floor(k / COLS), c = k % COLS;
+    if (tag) spaced(tag, 40.5, 8.5, GREY, 0.6, 'normal');
+    // ===== kartu
+    const n = Math.min(PER, prods.length - pg * PER), usedRows = Math.ceil(n / COLS);
+    for (let k = 0; k < n; k++) {
+      const i = pg * PER + k; const p = prods[i];
+      const r = Math.floor(k / COLS), c = k % COLS;
       const cx = M + c * colW, cy = top + r * rowH;
-      const ix = cx + (c ? 3 : 0.5), iy = cy + 2.2;
-      // foto (sudut membulat)
-      doc.saveGraphicsState(); doc.roundedRect(ix, iy, phW, phH, 2.4, 2.4, null); doc.clip(); doc.discardPath();
+      // badge nomor
+      doc.setFillColor(...BADGE); doc.circle(cx + 5.4, cy + 5.2, 3.2, 'F');
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(7.2); doc.setTextColor(...BADGE_T);
+      doc.text(String(i + 1).padStart(2, '0'), cx + 5.4, cy + 6.15, { align: 'center' });
+      // foto
+      const ix = cx + 5, iy = cy + 8.5;
+      doc.saveGraphicsState(); doc.roundedRect(ix, iy, phW, phH, 2, 2, null); doc.clip(); doc.discardPath();
       if (thumbs[i]) doc.addImage(thumbs[i], 'JPEG', ix, iy, phW, phH, undefined, 'FAST');
-      else { doc.setFillColor(...PH); doc.rect(ix, iy, phW, phH, 'F'); doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(170, 166, 160); doc.text('Foto menyusul', ix + phW / 2, iy + phH / 2, { align: 'center' }); }
+      else { doc.setFillColor(246, 244, 242); doc.rect(ix, iy, phW, phH, 'F'); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(...LIGHT); doc.text('Foto menyusul', ix + phW / 2, iy + phH / 2, { align: 'center' }); }
       doc.restoreGraphicsState();
-      // teks
-      const tx = ix + phW + 4.5, tw = cx + colW - tx - (c ? 0.5 : 3.5);
-      let y = cy + 11;
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(25); doc.setTextColor(...TAN); doc.text(String(i + 1).padStart(2, '0'), tx, y);
-      const cat = pdfTxt([p.category, !opt.sub || opt.sub.includes('·') || opt.sub === 'MULTI BRAND' ? p.brand : ''].filter(Boolean).join(' · ')).toUpperCase();
-      y += 5.2;
-      if (cat) { doc.setFontSize(6.8); doc.setTextColor(...TAN); doc.text(fit(cat, tw, 1)[0], tx, y, { charSpace: 0.5 }); y += 4.8; } else y += 1.5;
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(10.5); doc.setTextColor(...INK);
-      const nm = fit(pdfTxt(p.name) || '-', tw, 2); doc.text(nm, tx, y, { lineHeightFactor: 1.12 }); y += nm.length * 4.15 + 0.6;
-      const pillY = cy + rowH - 10.6;
+      // teks (kanan foto, dengan margin dari garis pembatas)
+      const tx = ix + phW + 5, tw = cx + colW - tx - 4.5;
+      let y = cy + 11.5;
+      const brand = pdfTxt(p.brand || '').toUpperCase();
+      if (brand) {
+        let bs = 15; doc.setFont('times', 'bold'); doc.setFontSize(bs);
+        while (bs > 10 && tw_(brand, 0.3) > tw) doc.setFontSize(--bs);
+        doc.setTextColor(...INK);
+        if (tw_(brand, 0.3) <= tw) { doc.text(brand, tx, y, { charSpace: 0.3 }); y += 4.4; }
+        else { const bl = fit(brand, tw, 2); doc.text(bl, tx, y - 1.5, { lineHeightFactor: 1.05 }); y += 2.9 + 3.6 * (bl.length - 1) + 1; }
+      } else y -= 3;
+      const cat = pdfTxt(p.category || '').toUpperCase();
+      if (cat) { doc.setFont('helvetica', 'normal'); doc.setFontSize(6.3); doc.setTextColor(...LIGHT); doc.text(clip1(cat, tw, 0.4), tx, y, { charSpace: 0.4 }); }
+      y += 5.6;
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(9.6); doc.setTextColor(...INK);
+      const nm = fit(pdfTxt(p.name) || '-', tw, 2); doc.text(nm, tx, y, { lineHeightFactor: 1.18 }); y += nm.length * 4.0 + 1.4;
+      const pillH = 7.4, pillY = cy + rowH - pillH - 4.2;
       const ds = concise(p.description);
       if (ds) {
-        doc.setFont('helvetica', 'normal'); doc.setFontSize(8.4); doc.setTextColor(...GREY);
-        const maxL = y <= pillY - 2 ? Math.floor((pillY - 2 - y) / 3.55) + 1 : 0;
-        if (maxL) { const dl = fit(ds, tw, Math.min(3, maxL)); doc.text(dl, tx, y, { lineHeightFactor: 1.2 }); }
+        doc.setFontSize(8); doc.setTextColor(...GREY);
+        const maxL = y <= pillY - 1.6 ? Math.min(3, Math.floor((pillY - 1.6 - y) / 3.45) + 1) : 0;
+        if (maxL) doc.text(fit(ds, tw, maxL), tx, y, { lineHeightFactor: 1.22 });
       }
       // pil harga
-      const price = opt.price && num(p.sellPrice) ? 'Harga: Rp ' + nfmt(p.sellPrice) : 'Harga: hubungi admin';
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(8.2);
-      const pw = Math.min(tw, doc.getTextWidth(price) + 7);
-      doc.setFillColor(...TANBG); doc.roundedRect(tx, pillY, pw, 6.6, 3.3, 3.3, 'F');
-      doc.setTextColor(...INK); doc.text(price, tx + pw / 2, pillY + 4.45, { align: 'center' });
+      const price = opt.price && num(p.sellPrice) ? idrK(p.sellPrice) : 'Hubungi admin';
+      doc.setFillColor(...pillOf(p)); doc.roundedRect(tx, pillY, tw, pillH, pillH / 2, pillH / 2, 'F');
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(10.5); doc.setTextColor(...INK);
+      doc.text(price, tx + tw / 2, pillY + 5.05, { align: 'center' });
     }
-    // garis pemisah
-    const n = Math.min(PER, prods.length - pg * PER), usedRows = Math.ceil(n / COLS);
-    doc.setDrawColor(...SEP); doc.setLineWidth(0.3);
-    for (let r = 1; r < usedRows; r++) doc.line(M, top + r * rowH, W - M, top + r * rowH);
-    for (let r = 0; r < usedRows; r++) if (n > r * COLS + 1) doc.line(M + colW, top + r * rowH + 2.5, M + colW, top + (r + 1) * rowH - 2.5);
-    // footer
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(...GREY);
-    doc.text(`${pg + 1} / ${pages}`, W - M, H - 5.5, { align: 'right' });
+    // ===== garis tabel
+    doc.setDrawColor(...GRID); doc.setLineWidth(0.3);
+    const gh = usedRows * rowH;
+    for (let r = 0; r < usedRows; r++) {
+      const filled = Math.min(COLS, n - r * COLS);
+      doc.rect(M, top + r * rowH, colW * filled, rowH);
+      if (filled > 1) doc.line(M + colW, top + r * rowH, M + colW, top + (r + 1) * rowH);
+    }
+    void gh;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(...LIGHT);
+    doc.text(`${pg + 1} / ${pages}`, W - M, H - 4.5, { align: 'right' });
   }
   const safe = (x) => String(x || '').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-');
   return { doc, name: `Katalog-${safe(opt.title) || 'Jastip'}${opt.sub ? '-' + safe(opt.sub) : ''}.pdf` };
