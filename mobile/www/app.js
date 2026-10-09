@@ -3089,7 +3089,6 @@ async function buildCatalogPDF(prods, opt, onProg) {
   const concise = (d) => pdfTxt(String(d || '').split('\n').map((l) => l.replace(/^[\s\-•*·✓✔]+/, '').trim()).filter(Boolean).join(' · '));
   const pages = Math.ceil(prods.length / PER) || 1;
   const ev = opt.ev;
-  const foot = [S.ownerWa ? 'Order via WhatsApp ' + fmtPhone(S.ownerWa) : '', ev && (ev.poStart || ev.poEnd) ? 'PO ' + fmtRangeD(ev.poStart, ev.poEnd) : ''].filter(Boolean).join('   ·   ');
   for (let pg = 0; pg < pages; pg++) {
     if (pg) doc.addPage();
     // judul
@@ -3149,7 +3148,6 @@ async function buildCatalogPDF(prods, opt, onProg) {
     for (let r = 0; r < usedRows; r++) if (n > r * COLS + 1) doc.line(M + colW, top + r * rowH + 2.5, M + colW, top + (r + 1) * rowH - 2.5);
     // footer
     doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(...GREY);
-    if (foot) doc.text(pdfTxt(foot), M, H - 5.5);
     doc.text(`${pg + 1} / ${pages}`, W - M, H - 5.5, { align: 'right' });
   }
   const safe = (x) => String(x || '').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-');
