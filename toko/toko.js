@@ -67,6 +67,43 @@ async function load() {
   renderAll();
   const pid = new URLSearchParams(location.search).get('p');
   if (pid) openDetail(pid, { push: false });
+  else showPromo();
+  renderPromoFab();
+}
+
+/* ===== Flyer promo seasonal (diatur dari aplikasi admin) ===== */
+const promoLive = () => {
+  const p = INFO.promo; if (!p || !p.image || p.active === false) return null;
+  const now = Date.now();
+  if (p.start && now < Date.parse(p.start)) return null;
+  if (p.end && now > Date.parse(p.end)) return null;
+  return p;
+};
+function showPromo(force) {
+  const p = promoLive(); if (!p) return;
+  const key = 'kt-promo-seen:' + (p.id || p.image);
+  if (!force) { try { if (sessionStorage.getItem(key)) return; sessionStorage.setItem(key, '1'); } catch (e) { /* abaikan */ } }
+  const ov = document.createElement('div'); ov.className = 'promo-ov'; ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-label', p.title || 'Promo');
+  const img = `<img src="${esc(photoUrl(p.image))}" alt="${esc(p.title || 'Promo')}">`;
+  ov.innerHTML = `<div class="promo-box">
+    <button class="promo-x" type="button" aria-label="Tutup">✕</button>
+    ${p.link ? `<a href="${esc(p.link)}" target="_blank" rel="noopener" class="promo-img">${img}</a>` : `<div class="promo-img">${img}</div>`}
+    <div class="promo-act">
+      ${p.link ? `<a class="btn wa" href="${esc(p.link)}" target="_blank" rel="noopener">${esc(p.cta || 'Lihat promo')}</a>` : ''}
+      <button class="btn ghost" type="button" data-pclose>Lihat katalog</button>
+    </div></div>`;
+  const close = () => { ov.classList.remove('show'); setTimeout(() => ov.remove(), 220); document.removeEventListener('keydown', esck); };
+  const esck = (e) => { if (e.key === 'Escape') close(); };
+  ov.onclick = (e) => { if (e.target === ov || e.target.closest('.promo-x,[data-pclose]')) close(); };
+  document.addEventListener('keydown', esck);
+  const im = ov.querySelector('img'); im.onerror = () => ov.remove();
+  document.body.appendChild(ov); requestAnimationFrame(() => ov.classList.add('show'));
+}
+function renderPromoFab() {
+  const p = promoLive(); let b = $('#promoFab');
+  if (!p) { if (b) b.remove(); return; }
+  if (!b) { b = document.createElement('button'); b.id = 'promoFab'; b.type = 'button'; b.className = 'promo-fab'; document.body.appendChild(b); b.onclick = () => showPromo(true); }
+  b.innerHTML = `🎁 <span>${esc(p.title || 'Promo')}</span>`;
 }
 
 function setEvent(ev) {
@@ -342,7 +379,7 @@ async function submitOrder(e) {
     const msg = `Halo ${INFO.business || 'admin'} 👋, saya sudah order ${EV.title || 'jastip'} ${EV.name} lewat katalog.\n\n` +
       `Kode pesanan: *${data.code}*\nNama: ${name}\n\n` +
       ls.map((l, i) => `${i + 1}. ${l.p.name} × ${l.qty} = ${fmtIDR(l.p.price * l.qty)}`).join('\n') +
-      `\n\n*Total barang: ${fmtIDR(data.total)}*${note ? `\nCatatan: ${note}` : ''}\n\nMohon dikonfirmasi ya 🙏\nLacak pesanan: ${track}`;
+      `\n\n*Total barang: ${fmtIDR(data.total)}*${note ? `\nCatatan: ${note}` : ''}${promoLive() ? `\n🎁 Ikut promo: ${promoLive().title || 'promo'}` : ''}\n\nMohon dikonfirmasi ya 🙏\nLacak pesanan: ${track}`;
     const mine = store.get('kt-orders', []);
     mine.unshift({ code: data.code, token: data.token, total: data.total, ev: EV.name, flag: EV.flag, at: Date.now() });
     store.set('kt-orders', mine.slice(0, 30));

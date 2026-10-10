@@ -679,10 +679,10 @@ async function compressImage(file, max = 1280, q = 0.75) {
     return c.toDataURL('image/jpeg', q);
   } finally { URL.revokeObjectURL(url); }
 }
-async function savePhotos(files) {
+async function savePhotos(files, opt = {}) {
   const ids = [];
   for (const f of files) {
-    const data = await compressImage(f);
+    const data = await compressImage(f, opt.max || 1280, opt.q || 0.75);
     const id = 'ph_' + uid();
     await DB.put('photos', { id, data, uploaded: false });
     photoCache.set(id, data);
@@ -2480,6 +2480,93 @@ async function viewCustomerDetail(id) {
 }
 
 /* ================= Views: Saya (akun, sinkron, pengaturan) ================= */
+/* ================= Flyer promo / seasonal (popup di web buyer) ================= */
+const toLocalDT = (iso) => { if (!iso) return ''; const d = new Date(iso); if (isNaN(d)) return ''; const p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
+const fromLocalDT = (v) => { if (!v) return ''; const d = new Date(v); return isNaN(d) ? '' : d.toISOString(); };
+const fmtDT = (iso) => { const d = new Date(iso); return isNaN(d) ? '-' : d.toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }).replace(/\./g, ':'); };
+function promoState(pr) {
+  if (!pr || !pr.image) return ['Belum ada flyer', 'muted'];
+  if (pr.active === false) return ['Nonaktif', 'muted'];
+  const now = Date.now(), s = pr.start ? Date.parse(pr.start) : 0, e = pr.end ? Date.parse(pr.end) : Infinity;
+  if (now < s) return ['Terjadwal · mulai ' + fmtDT(pr.start), 'warn'];
+  if (now > e) return ['Sudah berakhir', 'muted'];
+  return ['🟢 Sedang tayang di web', 'ok'];
+}
+async function viewPromo() {
+  setTab('saya');
+  if (!isOwner()) { toast('Hanya owner yang bisa mengatur flyer promo'); location.replace('#/saya'); return; }
+  const today = new Date(); const at = (h, m = 0) => { const d = new Date(today); d.setHours(h, m, 0, 0); return d.toISOString(); };
+  let pr = { image: '', title: '', start: at(10), end: at(22), cta: 'Join WAG', link: '', active: true, ...(S.promo || {}) };
+  const draft = Draft.get('promo');
+  if (draft && draft.pr) pr = { ...pr, ...draft.pr };
+  if (pr.image && !photoCache.get(pr.image)) { const ph = await DB.get('photos', pr.image); if (ph && ph.data) photoCache.set(pr.image, ph.data); }
+  const [stTxt, stCls] = promoState(S.promo);
+  view.innerHTML = `
+    <button class="back" onclick="location.hash='#/saya'">‹ Saya</button>
+    <p class="eyebrow">Web buyer</p>
+    <h1 class="page-title">Flyer promo</h1>
+    <p class="page-sub">Flyer muncul sebagai popup saat buyer pertama kali membuka web katalog, hanya selama jadwal tayang.</p>
+    ${draft ? `<div class="alert warn" style="display:flex;align-items:center;gap:10px;justify-content:space-between"><span>📝 Isian yang belum disimpan dipulihkan.</span><button class="btn sm" type="button" id="prDrop">Buang</button></div>` : ''}
+    <div class="alert ${stCls === 'ok' ? 'ok' : stCls === 'warn' ? 'warn' : 'info'}"><b>Status saat ini:</b> ${esc(stTxt)}${S.promo && S.promo.image ? `<div class="small">${esc(S.promo.title || 'Flyer')} · ${esc(fmtDT(S.promo.start))} – ${esc(fmtDT(S.promo.end))}</div>` : ''}</div>
+    <section class="card">
+      <h2>Flyer / poster</h2>
+      <div class="photos" id="prImg"></div>
+      <div class="help">Pakai gambar portrait (mis. 1080×1350 atau 1080×1920). Teks di flyer tetap tajam karena disimpan resolusi tinggi.</div>
+      <div class="field" style="margin-top:12px"><label>Nama promo</label><input class="input" id="prTitle" value="${esc(pr.title)}" placeholder="mis. Promo 10.10 — Diskon 10%"></div>
+    </section>
+    <section class="card">
+      <h2>Jadwal tayang</h2>
+      <div class="field"><label>Mulai</label><input class="input" type="datetime-local" id="prStart" value="${esc(toLocalDT(pr.start))}"></div>
+      <div class="field"><label>Selesai</label><input class="input" type="datetime-local" id="prEnd" value="${esc(toLocalDT(pr.end))}"></div>
+      <div class="chips" style="flex-wrap:wrap"><button type="button" class="chip" data-pr-preset="today">Hari ini 10:00–22:00</button><button type="button" class="chip" data-pr-preset="3d">3 hari dari sekarang</button><button type="button" class="chip" data-pr-preset="7d">7 hari dari sekarang</button></div>
+      <div class="toggle-row" style="margin-top:8px"><span>Aktifkan flyer</span><label class="switch"><input type="checkbox" id="prActive" ${pr.active !== false ? 'checked' : ''}><span></span></label></div>
+    </section>
+    <section class="card">
+      <h2>Tombol di popup</h2>
+      <div class="field"><label>Teks tombol</label><input class="input" id="prCta" value="${esc(pr.cta)}" placeholder="mis. Join WAG"></div>
+      <div class="field"><label>Link tombol</label><input class="input" id="prLink" inputmode="url" value="${esc(pr.link)}" placeholder="https://chat.whatsapp.com/…"></div>
+      <div class="help">Kosongkan link bila popup cukup menampilkan flyer saja.</div>
+    </section>
+    <div class="btn-col" style="margin-bottom:16px">
+      <button class="btn primary" id="prSave">Simpan & tayangkan</button>
+      ${S.promo && S.promo.image ? '<button class="btn danger" id="prOff">Hentikan flyer sekarang</button>' : ''}
+    </div>`;
+  const read = () => ({ image: pr.image, title: $('#prTitle').value.trim(), start: fromLocalDT($('#prStart').value), end: fromLocalDT($('#prEnd').value), cta: $('#prCta').value.trim(), link: $('#prLink').value.trim(), active: $('#prActive').checked });
+  const saveDraft = () => { clearTimeout(saveDraft._t); saveDraft._t = setTimeout(() => { if ($('#prTitle')) Draft.set('promo', { pr: read() }); }, 250); };
+  const drawImg = async () => { $('#prImg').innerHTML = pr.image ? `<div class="photo" style="width:160px;height:auto;aspect-ratio:auto"><img data-pid="${esc(pr.image)}" data-zoom alt="" style="width:100%;height:auto;object-fit:contain"><button type="button" data-rm-photo="1" aria-label="Hapus">✕</button></div>` : photoAdd('flyer', 'Galeri'); await hydratePhotos($('#prImg')); };
+  await drawImg();
+  view.querySelectorAll('section.card').forEach((sec) => { sec.addEventListener('input', () => { FORM_DIRTY = true; saveDraft(); }); sec.addEventListener('change', () => { FORM_DIRTY = true; saveDraft(); }); });
+  if (draft) FORM_DIRTY = true;
+  const dd = $('#prDrop'); if (dd) dd.onclick = () => { Draft.del('promo'); FORM_DIRTY = false; route(); };
+  $('#prImg').onchange = async (ev) => {
+    const f = ev.target.files && ev.target.files[0]; if (!f) return;
+    FORM_DIRTY = true;
+    try { const ids = await savePhotos([f], { max: 1600, q: 0.86 }); pr.image = ids[0]; await drawImg(); saveDraft(); toast('Flyer ditambahkan — tekan Simpan'); }
+    catch (e) { toast('Gambar gagal dibaca: ' + (e.message || e), 4000); }
+  };
+  $('#prImg').addEventListener('click', (ev) => { if (ev.target.closest('[data-rm-photo]')) { ev.preventDefault(); pr.image = ''; drawImg(); saveDraft(); } });
+  $$('[data-pr-preset]').forEach((b) => b.onclick = () => {
+    const now = new Date(); let s, e;
+    if (b.dataset.prPreset === 'today') { s = new Date(now); s.setHours(10, 0, 0, 0); e = new Date(now); e.setHours(22, 0, 0, 0); }
+    else { s = now; e = new Date(now.getTime() + (b.dataset.prPreset === '3d' ? 3 : 7) * 864e5); }
+    $('#prStart').value = toLocalDT(s.toISOString()); $('#prEnd').value = toLocalDT(e.toISOString()); FORM_DIRTY = true; saveDraft();
+  });
+  $('#prSave').onclick = async () => {
+    const v = read();
+    if (!v.image) return toast('Upload flyer dulu');
+    if (!v.start || !v.end) return toast('Isi jadwal mulai & selesai');
+    if (Date.parse(v.end) <= Date.parse(v.start)) return toast('Jam selesai harus setelah jam mulai');
+    if (v.link && !/^https?:\/\//i.test(v.link)) v.link = 'https://' + v.link;
+    S.promo = { ...v, id: (S.promo && S.promo.image === v.image && S.promo.id) || 'pr_' + uid(), updatedAt: Date.now() };
+    await saveShared(); Draft.del('promo'); FORM_DIRTY = false;
+    toast(promoState(S.promo)[0].replace('🟢 ', '') + ' ✓', 3000); viewPromo();
+  };
+  const off = $('#prOff'); if (off) off.onclick = async () => {
+    if (!(await confirmSheet('Hentikan flyer promo sekarang?', 'Hentikan', true, 'Popup tidak akan muncul lagi di web buyer.'))) return;
+    S.promo = { ...S.promo, active: false, updatedAt: Date.now() }; await saveShared(); Draft.del('promo'); FORM_DIRTY = false; toast('Flyer dihentikan'); viewPromo();
+  };
+}
+
 async function viewSettings() {
   setTab('saya');
   const admins = (await DB.all('admins')).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
@@ -2518,6 +2605,10 @@ async function viewSettings() {
       ${EVENTS.length ? EVENTS.filter((e) => e.status !== 'done').map((e) => `<div class="kv"><span>${esc(evLabel(e))}</span><span>${esc(evStatusLabel(e.status))}${e.id === curEv()?.id ? ' · <b style="color:var(--accent)">aktif</b>' : ''}</span></div>`).join('') : '<p class="muted">Belum ada event.</p>'}
       <button class="btn" id="pickEv" style="margin-top:12px">Ganti event aktif</button>
     </section>
+
+    ${isOwner() ? `<section class="card"><div class="card-head"><h2>🎁 Flyer promo web</h2><a href="#/promo">Atur →</a></div>
+      <p class="hint" style="margin-bottom:6px">Popup flyer seasonal saat buyer membuka web katalog.</p>
+      <div class="kv"><span>Status</span><span>${esc(promoState(S.promo)[0])}</span></div></section>` : ''}
 
     ${webBase() ? `<section class="card"><h2>Web untuk buyer</h2>
       <p class="hint">Katalog + keranjang. Pesanan dari web masuk ke tab Pesanan sebagai <b>Masuk</b>.</p>
@@ -3271,6 +3362,7 @@ const ROUTES = [
   [/^#\/customer$/, viewCustomers],
   [/^#\/customer\/([\w-]+)$/, (m) => viewCustomerDetail(m[1])],
   [/^#\/saya$/, viewSettings],
+  [/^#\/promo$/, viewPromo],
   [/^#\/event$/, viewEvents],
   [/^#\/event\/baru$/, () => viewEventForm(null)],
   [/^#\/event\/([\w-]+)$/, (m) => viewEventForm(m[1])],

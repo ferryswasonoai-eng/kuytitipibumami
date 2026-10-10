@@ -414,7 +414,11 @@ language sql stable security definer set search_path = public as $$
         'wa',         coalesce(data->>'ownerWa', ''),
         'tagline',    coalesce(data->>'tagline', ''),
         'categories', coalesce(data->'categories', '[]'::jsonb),
-        'faq',        coalesce(data->'faq', '[]'::jsonb))
+        'faq',        coalesce(data->'faq', '[]'::jsonb),
+        'promo',      case when coalesce((data->'promo'->>'active')::boolean, true)
+                            and nullif(data->'promo'->>'image', '') is not null
+                            and coalesce((data->'promo'->>'end')::timestamptz, now()) >= now()
+                       then data->'promo' else null end)
       from public.settings where id = 'main'), '{}'::jsonb),
     'events', coalesce((select jsonb_agg(jsonb_build_object(
         'id', id, 'code', code, 'name', name, 'title', title, 'country', country, 'flag', flag,
