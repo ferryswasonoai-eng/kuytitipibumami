@@ -3337,12 +3337,16 @@ async function exportCSV() {
   const [orders, customers, pm] = await Promise.all([DB.all('orders'), DB.all('customers'), paidMap()]);
   const cmap = Object.fromEntries(customers.map((c) => [c.id, c]));
   const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-  const rows = [['Kode', 'Tanggal', 'Trip', 'Sumber', 'PIC', 'Customer', 'No WA', 'Status', 'Barang', 'Qty', 'Harga beli', 'Mata uang', 'Kurs', 'Modal (Rp)', 'Harga jual (Rp)', 'Subtotal (Rp)', 'Total pesanan (Rp)', 'Dibayar (Rp)']];
+  const rows = [['Kode', 'Tanggal', 'Trip', 'Sumber', 'PIC', 'Customer', 'No WA', 'Status pesanan', 'Barang', 'Status barang', 'Qty', 'Harga beli', 'Mata uang', 'Kurs', 'Modal (Rp)', 'Harga jual (Rp)', 'Subtotal (Rp)', 'Potongan diskon item (Rp)', 'Subtotal setelah diskon (Rp)', 'Total pesanan (Rp)', 'Dibayar (Rp)']];
+  // nomor WA sebagai teks (+62 812-3456-7890) agar Excel tidak mengubahnya jadi 6E+12
+  const phoneText = (p) => { const d = normPhone(p); if (!d) return ''; const r = d.slice(2); return '+' + d.slice(0, 2) + ' ' + [r.slice(0, 3), r.slice(3, 7), r.slice(7)].filter(Boolean).join('-'); };
+  const itemSt = (it) => it.soldOut ? 'Habis' : it.bought ? 'Sudah dibeli' : 'Belum dibeli';
   orders.sort((a, b) => a.createdAt - b.createdAt).forEach((o) => {
     const t = orderTotals(o, pm[o.id]);
     (o.items || []).forEach((it, i) => {
       const r = itemRate(it); const sell = itemSellIDR(it);
-      rows.push([o.code, new Date(o.createdAt).toISOString().slice(0, 10), o.trip, SOURCES[o.source] || '', o.picName, cmap[o.customerId]?.name, cmap[o.customerId]?.phone, statusLabel(o.status), it.name, num(it.qty), num(it.buyPrice), it.buyCur, r, Math.round(num(it.buyPrice) * r * num(it.qty)), Math.round(sell), Math.round(sell * num(it.qty)), i === 0 ? Math.round(t.total) : '', i === 0 ? Math.round(t.paid) : '']);
+      const ph = cmap[o.customerId]?.phone;
+      rows.push([o.code, new Date(o.createdAt).toISOString().slice(0, 10), o.trip, SOURCES[o.source] || '', o.picName, cmap[o.customerId]?.name, ph ? phoneText(ph) : '', statusLabel(o.status), it.name, itemSt(it), num(it.qty), num(it.buyPrice), it.buyCur, r, Math.round(num(it.buyPrice) * r * num(it.qty)), Math.round(sell), Math.round(lineGross(it)), Math.round(lineDisc(it)), Math.round(lineNet(it)), i === 0 ? Math.round(t.total) : '', i === 0 ? Math.round(t.paid) : '']);
     });
   });
   await saveFile(`kuytitip-rekap-${new Date().toISOString().slice(0, 10)}.csv`, '﻿' + rows.map((r) => r.map(q).join(',')).join('\n'), 'text/csv');
