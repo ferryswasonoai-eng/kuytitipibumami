@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Katalog Jastip Bangkok — Multi Brand</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Playfair+Display:wght@700;800&display=swap');
+:root{--red:#9c1724;--pink:#fce2e4;--ink:#17263d}*{box-sizing:border-box}body{margin:0;background:#ede9e7;color:var(--ink);font-family:'DM Sans',Arial,sans-serif}
+.toolbar{position:sticky;top:0;z-index:10;background:#fff;padding:12px 20px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;box-shadow:0 2px 12px #0001}.toolbar button,.toolbar select{padding:10px 15px;border:1px solid #ddd;border-radius:9px;background:#fff;font:inherit}.toolbar button{background:var(--red);color:white;cursor:pointer}.toolbar label{font-size:13px}.toolbar small{color:#687385}
+.page{width:210mm;height:297mm;background:#fff;margin:16px auto;overflow:hidden;box-shadow:0 6px 24px #0002;page-break-after:always;position:relative}
+.hero{height:52mm;position:relative;background:linear-gradient(110deg,#fff3ee 10%,#f5bbc1 45%,#c65a64 100%);overflow:hidden}
+.hero img{position:absolute;width:100%;height:100%;object-fit:cover;object-position:center 52%}
+.hero:after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,#fff7f3 0%,#fff8f2eb 30%,#fff6ee30 70%,#ffffff00 100%)}
+.hero-title{position:absolute;z-index:1;top:9mm;left:11mm;color:var(--red);text-shadow:0 1px 1px #fff7}.hero-title .eyebrow{font-size:16px;letter-spacing:6px;font-weight:800}.hero-title h1{font:800 46px/1.08 'Playfair Display',Georgia,serif;margin:1px 0}.hero-title .sub{font-size:10px;letter-spacing:5px;font-weight:800}
+.products{padding:3.5mm 5mm 5mm;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:repeat(5,43.5mm);gap:2.5mm}
+.product{border-radius:4mm;background:linear-gradient(135deg,#fff 60%,#fff7f3);box-shadow:0 2px 10px #37251c15;border:1px solid #f2e7e4;display:flex;padding:2.3mm;gap:2.5mm;overflow:hidden;min-width:0}
+.photo{width:49%;height:100%;object-fit:cover;border-radius:2.5mm;background:#f4efed;flex-shrink:0}
+.detail{flex:1;min-width:0;display:flex;flex-direction:column}.num{font-size:9px;color:#a32c35;font-weight:800}.brand{font-size:8px;letter-spacing:.9px;color:#98544d;font-weight:800;text-transform:uppercase;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.name{font-size:12px;font-weight:800;line-height:1.23;margin:3px 0;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2}.desc{font-size:8.3px;line-height:1.35;color:#687180;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;white-space:pre-line}.price{margin-top:auto;text-align:center;background:var(--pink);border-radius:20px;color:#51191e;font-size:12px;font-weight:800;padding:6px 3px}.footer{position:absolute;bottom:2mm;right:7mm;color:#a6a0a0;font-size:8px}
+@media print{@page{size:A4 portrait;margin:0}body{background:white}.toolbar{display:none}.page{margin:0;box-shadow:none;break-after:page;page-break-after:always} .page:last-child{break-after:auto}}
+@media screen and (max-width:800px){.page{transform-origin:top left;margin:12px 0}.toolbar{position:relative}}
+</style></head><body>
+<div class="toolbar"><b>Katalog Bangkok</b><label>Kategori <select id="cat"><option value="">Semua kategori</option></select></label><label>Brand <select id="brand"><option value="">Semua brand</option></select></label><label><input id="onlyPhotos" type="checkbox" checked> Foto tersedia</label><button id="print">Export PDF / Print</button><small id="status">Mengambil data Supabase…</small></div><main id="pages"></main>
+<script>
+const URL='https://cxresrjjlzruyerkqqqy.supabase.co';
+const KEY='sb_publishable_lyO2s8UewUmXqA2uCPWLlA_kra7091D';
+const photoUrl=id=>!id?'':/^https?:/.test(id)?id:URL+'/storage/v1/object/public/photos/'+encodeURIComponent(id)+'.jpg';
+const fmt=n=>'IDR '+Math.round(Number(n)||0).toLocaleString('id-ID');
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let all=[],banner='';
+async function init(){
+try{
+const response=await fetch(URL+'/rest/v1/rpc/catalog',{method:'POST',headers:{'apikey':KEY,'Content-Type':'application/json'} ,body:'{}'});
+if(!response.ok)throw Error('HTTP '+response.status+' — periksa akses fungsi catalog');
+const data=await response.json();const event=(data.events||[]).find(e=>e.id==='ev_bkk');
+if(!event)throw Error('Event Bangkok tidak ditemukan');
+banner=photoUrl(event.banner);
+all=(data.products||[]).filter(p=>(p.events||[]).includes('ev_bkk'));
+const categories=[...new Set(all.map(p=>p.category).filter(Boolean))].sort();
+const brands=[...new Set(all.map(p=>p.brand).filter(Boolean))].sort();
+for(const [id,vals] of [['cat',categories],['brand',brands]]){document.getElementById(id).insertAdjacentHTML('beforeend',vals.map(v=>'<option value="'+esc(v)+'">'+esc(v)+'</option>').join(''))}
+render();
+}catch(e){document.getElementById('status').textContent='Gagal: '+e.message}
+}
+function render(){
+let rows=all.filter(p=>(!document.getElementById('cat').value||p.category===document.getElementById('cat').value)&&(!document.getElementById('brand').value||p.brand===document.getElementById('brand').value)&&(!document.getElementById('onlyPhotos').checked||p.photo||(p.photos||[]).length));
+let total=Math.ceil(rows.length/10);document.getElementById('status').textContent=rows.length+' produk • '+total+' halaman A4';
+const pages=[];for(let i=0;i<rows.length;i+=10){let subset=rows.slice(i,i+10);pages.push('<section class="page"><header class="hero">'+(banner?'<img src="'+esc(banner)+'" alt="Bangkok">':'')+'<div class="hero-title"><div class="eyebrow">JASTIP</div><h1>Bangkok</h1><div class="sub">MULTI BRAND</div></div></header><div class="products">'+subset.map((p,j)=>{const img=photoUrl(p.photo||(p.photos||[])[0]);return '<article class="product">'+(img?'<img class="photo" src="'+esc(img)+'" alt="'+esc(p.name)+'" loading="eager">':'<div class="photo"></div>')+'<div class="detail"><div class="num">'+String(i+j+1).padStart(2,'0')+' · '+esc(p.category||'PRODUK')+'</div><div class="brand">'+esc(p.brand||'MULTI BRAND')+'</div><div class="name">'+esc(p.name)+'</div><div class="desc">'+esc(p.description||'')+'</div><div class="price">'+fmt(p.price??p.sell_price)+'</div></div></article>'}).join('')+'</div><div class="footer">'+(Math.floor(i/10)+1)+' / '+total+'</div></section>')}
+document.getElementById('pages').innerHTML=pages.join('')||'<p style="padding:24px">Tidak ada produk yang cocok.</p>';
+}
+for(const id of ['cat','brand','onlyPhotos'])document.getElementById(id).addEventListener('change',render);
+document.getElementById('print').onclick=()=>window.print();
+init();
+</script></body></html>
