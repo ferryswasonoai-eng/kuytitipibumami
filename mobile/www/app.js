@@ -1024,9 +1024,9 @@ async function viewHome() {
   let omzet = 0, profit = 0, due = 0, aktif = 0;
   scope.forEach((o) => { const t = orderTotals(o, pm[o.id]); omzet += t.total; profit += t.profit; due += t.due; if (o.status !== 'selesai') aktif++; });
   const waiting = orders.filter((o) => o.status === 'menunggu').length;
-  const toBuy = orders.filter((o) => ['baru', 'dibeli'].includes(o.status)).reduce((a, o) => a + (o.items || []).filter((i) => !i.bought).reduce((b, i) => b + num(i.qty), 0), 0);
+  const toBuy = orders.filter((o) => ['baru', 'dibeli'].includes(o.status)).reduce((a, o) => a + (o.items || []).filter((i) => !i.bought && !i.soldOut).reduce((b, i) => b + num(i.qty), 0), 0);
   let qtyAll = 0, qtyBought = 0;
-  scope.forEach((o) => (o.items || []).forEach((i) => { qtyAll += num(i.qty); if (i.bought || ['dikirim', 'selesai'].includes(o.status)) qtyBought += num(i.qty); }));
+  scope.forEach((o) => (o.items || []).forEach((i) => { if (i.soldOut) return; qtyAll += num(i.qty); if (i.bought || ['dikirim', 'selesai'].includes(o.status)) qtyBought += num(i.qty); }));
   const pct = qtyAll ? Math.round(qtyBought / qtyAll * 100) : 0;
   const paidAll = scope.reduce((a, o) => a + Math.min(num(pm[o.id]), orderTotals(o).total), 0);
   const payPct = omzet ? Math.round(paidAll / omzet * 100) : 0;
