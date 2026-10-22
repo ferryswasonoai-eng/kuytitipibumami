@@ -269,7 +269,7 @@ function openDetail(id, { push = true } = {}) {
   const open = EV?.status === 'open';
   const c = p.category ? catOf(p.category) : null;
   const sim = similar(p);
-  const phs = (p.photos && p.photos.length ? p.photos : (p.photo ? [p.photo] : [])).filter(Boolean).slice(0, 3);
+  const phs = (p.photos && p.photos.length ? p.photos : (p.photo ? [p.photo] : [])).filter(Boolean).slice(0, 5);
   const url = (() => { const u = new URL(location.href); u.searchParams.set('e', (EV?.code || '').toLowerCase()); u.searchParams.set('p', p.id); return u.toString(); })();
   const SV = {
     cart: '<svg viewBox="0 0 24 24"><path d="M3 4h2l2.4 11.2a1 1 0 0 0 1 .8h8.9a1 1 0 0 0 1-.8L20 8H6"/><circle cx="9" cy="20" r="1.4"/><circle cx="17" cy="20" r="1.4"/></svg>',

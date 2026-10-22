@@ -2227,6 +2227,7 @@ function parseProductText(text, opt = {}) {
   return F;
 }
 
+const MAX_PHOTOS = 5;   // foto per produk
 const Draft = {
   key: (k) => 'kt-draft:' + k,
   get(k) { try { return JSON.parse(localStorage.getItem(this.key(k)) || 'null'); } catch (e) { return null; } },
@@ -2253,7 +2254,7 @@ async function viewProductForm(id) {
     Object.assign(p, draft.p || {});
   }
   // daftar foto: [0] = foto utama (dipakai kartu katalog, pesanan & invoice)
-  p.photos = (p.photos && p.photos.length ? p.photos : (p.photo ? [p.photo] : [])).filter(Boolean).slice(0, 3);
+  p.photos = (p.photos && p.photos.length ? p.photos : (p.photo ? [p.photo] : [])).filter(Boolean).slice(0, MAX_PHOTOS);
   view.innerHTML = `
     <button class="back" onclick="location.hash='#/produk'">‹ Produk</button>
     <p class="eyebrow">${id ? (ro ? 'Produk' : 'Ubah produk') : 'Produk baru'}</p>
@@ -2262,7 +2263,7 @@ async function viewProductForm(id) {
     ${ro ? '' : `<button class="btn" type="button" id="pPaste" style="margin-bottom:12px">📋 Tempel teks dari WhatsApp — isi otomatis</button>`}
     <fieldset ${ro ? 'disabled' : ''} style="border:0;padding:0;margin:0;min-width:0">
     <section class="card">
-      <div class="field"><label>Foto produk <span class="muted">(maks. 3 — foto pertama jadi foto utama)</span></label><div class="photos" id="pPhoto"></div></div>
+      <div class="field"><label>Foto produk <span class="muted">(maks. 5 — foto pertama jadi foto utama)</span></label><div class="photos" id="pPhoto"></div></div>
       <div class="field"><label class="req">Nama produk</label><input class="input" id="pName" value="${esc(p.name)}"></div>
       <div class="field"><label>Brand / toko</label><input class="input" id="pBrand" data-suggest="brands" autocomplete="off" autocapitalize="characters" placeholder="Ketik brand baru / pilih" value="${esc(p.brand)}"></div>
       <div class="two">
@@ -2296,7 +2297,7 @@ async function viewProductForm(id) {
   const drawPhoto = async () => {
     p.photo = p.photos[0] || '';
     $('#pPhoto').innerHTML = p.photos.map((ph, i) => `<div class="photo ${i === 0 ? 'main' : ''}"><img data-pid="${esc(ph)}" data-zoom alt="">${i === 0 && p.photos.length > 1 ? '<span class="ph-main">Utama</span>' : ''}${ro ? '' : `<button type="button" data-rm-photo="${esc(ph)}" aria-label="Hapus foto">✕</button>${i > 0 ? `<button type="button" class="ph-star" data-main-photo="${i}" aria-label="Jadikan foto utama">★</button>` : ''}`}</div>`).join('')
-      + (ro ? (p.photos.length ? '' : '<span class="muted">Belum ada foto</span>') : (p.photos.length < 3 ? photoAdd('product') : ''));
+      + (ro ? (p.photos.length ? '' : '<span class="muted">Belum ada foto</span>') : (p.photos.length < MAX_PHOTOS ? photoAdd('product') : ''));
     await hydratePhotos($('#pPhoto'));
   };
   const help = () => {
@@ -2318,9 +2319,9 @@ async function viewProductForm(id) {
   $('#pPhoto').onchange = async (e) => {
     if (!e.target.dataset.addPhoto) return;
     FORM_DIRTY = true;
-    const files = Array.from(e.target.files || []).slice(0, 3 - p.photos.length);
-    if ((e.target.files || []).length > files.length) toast('Maksimal 3 foto per produk');
-    const ids = await savePhotos(files); p.photos = [...p.photos, ...ids].slice(0, 3); drawPhoto(); saveDraft();
+    const files = Array.from(e.target.files || []).slice(0, MAX_PHOTOS - p.photos.length);
+    if ((e.target.files || []).length > files.length) toast(`Maksimal ${MAX_PHOTOS} foto per produk`);
+    const ids = await savePhotos(files); p.photos = [...p.photos, ...ids].slice(0, MAX_PHOTOS); drawPhoto(); saveDraft();
   };
   $('#pPhoto').addEventListener('click', (e) => {
     const rm = e.target.closest('[data-rm-photo]');
@@ -2373,7 +2374,7 @@ async function viewProductForm(id) {
   $('#pSave').onclick = async () => {
     const name = $('#pName').value.trim(); if (!name) return toast('Nama produk wajib diisi');
     Object.assign(p, { name, brand: $('#pBrand').value.trim(), weight: $('#pWeight').value, description: $('#pDesc').value.trim(), buyPrice: $('#pBuy').value, buyCur: $('#pCur').value, sellPrice: $('#pSell').value, note: $('#pNote').value, published: $('#pPub').checked,
-      category: $('#pCat').value, badge: $('#pBadge').value, featured: $('#pFeat').checked, photo: p.photos[0] || '', photos: p.photos.slice(0, 3) });
+      category: $('#pCat').value, badge: $('#pBadge').value, featured: $('#pFeat').checked, photo: p.photos[0] || '', photos: p.photos.slice(0, MAX_PHOTOS) });
     await saveRow('products', p);
     Draft.del(dKey); FORM_DIRTY = false;
     toast('Produk disimpan ✓'); location.hash = '#/produk';
