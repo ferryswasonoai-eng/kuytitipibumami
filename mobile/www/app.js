@@ -735,7 +735,7 @@ function confirmSheet(msg, okLabel = 'Ya, lanjut', danger = true, sub = '') {
   return new Promise((res) => {
     let done = false;
     const fin = (v) => { if (!done) { done = true; res(v); } };
-    openSheet(`<h3>${esc(msg)}</h3>${sub ? `<p class="muted">${esc(sub)}</p>` : ''}<div class="btn-col">
+    openSheet(`<h3>${esc(msg)}</h3>${sub ? `<p class="muted" style="white-space:pre-line">${esc(sub)}</p>` : ''}<div class="btn-col">
       <button class="btn ${danger ? 'danger' : 'primary'}" data-ok>${esc(okLabel)}</button>
       <button class="btn ghost" data-no>Batal</button></div>`, (s) => {
       $('[data-ok]', s).onclick = () => { fin(true); closeSheet(); };
@@ -2077,34 +2077,57 @@ async function viewProducts() {
   const catSel = viewProducts.cat || '';
   const brand = viewProducts.brand || '';
   const brands = [...new Set(inEv.map((p) => p.brand).filter(Boolean))].sort();
+  const sel = isOwner() ? viewProducts.sel : null;   // mode pilih banyak (Set id) — null = mode biasa
   const products = inEv.filter((p) => (!catSel || p.category === catSel) && (!brand || p.brand === brand) && (!q || (p.name + ' ' + (p.brand || '') + ' ' + (p.category || '')).toLowerCase().includes(q)))
     .sort((a, b) => (a.brand || '').localeCompare(b.brand || '') || num(a.sort) - num(b.sort) || a.name.localeCompare(b.name));
   view.innerHTML = `
     <p class="eyebrow">Katalog</p>
     <h1 class="page-title">Produk</h1>
     <p class="page-sub">Katalog ini juga tampil di web untuk buyer (produk yang ditandai tampil & punya harga jual).</p>
-    <div class="row" style="gap:8px;flex-wrap:wrap;margin-bottom:12px">${webBase() ? `<button class="btn sm" id="shareCat">🔗 Bagikan link katalog</button>` : ''}<button class="btn sm" id="dlCat">📄 Download katalog PDF</button></div>
+    <div class="row" style="gap:8px;flex-wrap:wrap;margin-bottom:12px">${webBase() ? `<button class="btn sm" id="shareCat">🔗 Bagikan link katalog</button>` : ''}<button class="btn sm" id="dlCat">📄 Download katalog PDF</button>${isOwner() && all.length && !sel ? '<button class="btn sm" id="selStart">☑ Pilih &amp; hapus</button>' : ''}</div>
     <div class="search"><input class="input" id="pq" placeholder="Cari produk / brand…" value="${esc(viewProducts.q || '')}"></div>
     ${EVENTS.length ? evChips(evP, 'data-evp') : ''}
     ${catsUsed.length ? `<div class="chips">${['', ...catsUsed].map((c) => `<button class="chip ${c === catSel ? 'on' : ''}" data-cat="${esc(c)}">${c ? esc(catIcon(c) + ' ' + c) : 'Semua kategori'}</button>`).join('')}</div>` : ''}
     ${brands.length > 1 ? `<div class="chips">${['', ...brands].map((b) => `<button class="chip ${b === brand ? 'on' : ''}" data-brand="${esc(b)}">${b ? esc(b) : 'Semua brand'}</button>`).join('')}</div>` : ''}
+    ${sel ? `<div class="sel-head"><b>${sel.size} dipilih</b><button class="btn sm" type="button" id="selAll">${products.length && products.every((p) => sel.has(p.id)) ? 'Batal pilih semua' : `Pilih semua (${products.length})`}</button></div>` : ''}
     ${products.length ? products.map((p) => `
-      <a class="list-item" href="#/produk/${p.id}">
+      <a class="list-item ${sel && sel.has(p.id) ? 'picked' : ''}" ${sel ? `href="#" data-pick="${p.id}"` : `href="#/produk/${p.id}"`}>
+        ${sel ? `<span class="check ${sel.has(p.id) ? 'on' : ''}">✓</span>` : ''}
         ${thumbHTML(p.photo)}
         <div style="flex:1;min-width:0"><div class="title">${esc(p.name)}</div>
           <div class="sub">${(p.events || []).map((id) => esc(evById(id)?.flag || '')).join('')} ${p.brand ? esc(p.brand) : ''}${p.category ? ' · ' + esc(p.category) : ''}${num(p.buyPrice) && !isShopper() ? ' · beli ' + fmtCur(p.buyPrice, p.buyCur) : ''}${p.published === false ? ' · <b>tersembunyi</b>' : ''}</div>
           ${p.badge || p.featured ? `<div style="margin-top:4px">${p.badge ? `<span class="badge st-menunggu">${esc(p.badge)}</span> ` : ''}${p.featured ? '<span class="badge pay-lunas">Pilihan</span>' : ''}</div>` : ''}</div>
         <div class="amount">${num(p.sellPrice) ? fmtIDR(p.sellPrice) : ''}</div>
-        ${webBase() && p.published !== false && num(p.sellPrice) ? `<button class="share-mini" type="button" data-share-prod="${p.id}" aria-label="Bagikan link produk">🔗</button>` : ''}</a>`).join('')
+        ${!sel && webBase() && p.published !== false && num(p.sellPrice) ? `<button class="share-mini" type="button" data-share-prod="${p.id}" aria-label="Bagikan link produk">🔗</button>` : ''}</a>`).join('')
     : `<div class="empty"><div class="big">📦</div>Belum ada produk.</div>`}
-    ${canSell() ? `<button class="fab" aria-label="Produk baru" onclick="location.hash='#/produk/baru'">+</button>` : ''}`;
+    ${sel ? `<div class="sel-bar"><button class="btn ghost" type="button" id="selCancel">Batal</button><button class="btn danger" type="button" id="selDel" ${sel.size ? '' : 'disabled'}>🗑 Hapus ${sel.size || ''} produk</button></div>`
+      : canSell() ? `<button class="fab" aria-label="Produk baru" onclick="location.hash='#/produk/baru'">+</button>` : ''}`;
   await hydratePhotos();
   const qi = $('#pq');
   qi.oninput = () => { viewProducts.q = qi.value; clearTimeout(viewProducts._t); viewProducts._t = setTimeout(async () => { await viewProducts(); const n = $('#pq'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); }, 250); };
   $$('[data-brand]').forEach((b) => b.onclick = () => { viewProducts.brand = b.dataset.brand; viewProducts(); });
   $$('[data-cat]').forEach((b) => b.onclick = () => { viewProducts.cat = b.dataset.cat; viewProducts(); });
   $$('[data-evp]').forEach((b) => b.onclick = () => { viewProducts.ev = b.dataset.evp; viewProducts.cat = ''; viewProducts.brand = ''; viewProducts(); });
-  view.onclick = async (e) => { const b = e.target.closest('[data-share-prod]'); if (!b) return; e.preventDefault(); e.stopPropagation(); const p = await DB.get('products', b.dataset.shareProd); if (p) shareProduct(p, evP); };
+  view.onclick = async (e) => {
+    const pk = e.target.closest('[data-pick]');
+    if (pk && sel) { e.preventDefault(); const id = pk.dataset.pick; sel.has(id) ? sel.delete(id) : sel.add(id); viewProducts.keepY = scrollY; return viewProducts(); }
+    const b = e.target.closest('[data-share-prod]'); if (!b) return; e.preventDefault(); e.stopPropagation(); const p = await DB.get('products', b.dataset.shareProd); if (p) shareProduct(p, evP);
+  };
+  if (viewProducts.keepY != null) { window.scrollTo(0, viewProducts.keepY); viewProducts.keepY = null; }
+  const on = (s, fn) => { const x = $(s); if (x) x.onclick = fn; };
+  on('#selStart', () => { viewProducts.sel = new Set(); viewProducts(); });
+  on('#selCancel', () => { viewProducts.sel = null; viewProducts.keepY = scrollY; viewProducts(); });
+  on('#selAll', () => { const allOn = products.every((p) => sel.has(p.id)); products.forEach((p) => allOn ? sel.delete(p.id) : sel.add(p.id)); viewProducts.keepY = scrollY; viewProducts(); });
+  on('#selDel', async () => {
+    const picked = all.filter((p) => sel.has(p.id));
+    if (!picked.length) return;
+    const names = picked.slice(0, 5).map((p) => '• ' + p.name).join('\n') + (picked.length > 5 ? `\n• … dan ${picked.length - 5} lainnya` : '');
+    if (!(await confirmSheet(`Hapus ${picked.length} produk?`, `Hapus ${picked.length} produk`, true, `${names}\n\nProduk hilang dari aplikasi semua admin & web buyer. Pesanan yang sudah ada tidak berubah.`))) return;
+    for (const p of picked) await removeRow('products', p);
+    viewProducts.sel = null;
+    toast(`${picked.length} produk dihapus ✓`);
+    viewProducts();
+  });
   $('#dlCat').onclick = catalogSheet;
   const sc = $('#shareCat'); if (sc) sc.onclick = () => { const e = evById(evP) || curEv(); shareText('Katalog ' + S.business, `${e ? `${e.title} ${e.name}${e.poStart || e.poEnd ? ' (' + fmtRangeD(e.poStart, e.poEnd) + ')' : ''}` : 'Katalog jastip'} — ${S.business}\n${webBase()}${e ? '?e=' + encodeURIComponent(e.code.toLowerCase()) : ''}`); };
 }
@@ -3381,6 +3404,7 @@ async function route(opts = {}) {
   const full = location.hash || '#/beranda';
   const [h, qs] = full.split('?');
   const params = new URLSearchParams(qs || '');
+  if (h !== '#/produk') viewProducts.sel = null;
   for (const [re, fn] of ROUTES) {
     const m = h.match(re);
     if (m) {

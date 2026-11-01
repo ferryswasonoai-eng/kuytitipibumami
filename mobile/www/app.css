@@ -442,3 +442,13 @@ input[type=date].input { -webkit-appearance: none; appearance: none; width: 100%
 .list-item.done .title, .group-row.done span.name { color: var(--ink-2, #5d6474); }
 .ok-badge { background: #e3f5ec; color: #17915f; font-size: .64rem; padding: 2px 6px; border-radius: 6px; vertical-align: middle; }
 .soldout .title, .group-row.soldout span.name { text-decoration: line-through; text-decoration-color: rgba(0,0,0,.35); color: var(--muted); }
+
+/* ---------- pilih banyak produk ---------- */
+.sel-head { position: sticky; top: calc(var(--safe-top, 0px) + 72px); z-index: 5; display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 14px; margin-bottom: 10px; background: var(--ink); color: #fff; border-radius: 14px; }
+.sel-head .btn { width: auto; background: rgba(255,255,255,.14); color: #fff; border: 0; }
+.list-item.picked { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.list-item .check { margin-right: -2px; }
+.sel-bar { position: fixed; left: 14px; right: 14px; bottom: calc(96px + var(--safe-bottom)); z-index: 26; display: grid; grid-template-columns: 1fr 2fr; gap: 10px; padding: 10px; background: #fff; border-radius: 18px; box-shadow: 0 14px 34px -14px rgba(16,24,40,.45); }
+.sel-bar .btn { min-height: 48px; }
+.sel-bar .btn:disabled { opacity: .45; }
+.sel-bar .btn.danger { background: var(--danger); color: #fff; border-color: var(--danger); }
